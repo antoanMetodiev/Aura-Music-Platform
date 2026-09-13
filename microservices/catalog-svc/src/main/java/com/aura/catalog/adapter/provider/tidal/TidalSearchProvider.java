@@ -16,7 +16,12 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import com.aura.catalog.config.AppConfig;
+
+import java.util.concurrent.ExecutorService;
 
 import static com.aura.catalog.adapter.provider.tidal.TidalMapper.REL_ALBUMS;
 import static com.aura.catalog.adapter.provider.tidal.TidalMapper.REL_ARTISTS;
@@ -31,6 +36,14 @@ import static com.aura.catalog.adapter.provider.tidal.TidalMapper.TYPE_TRACKS;
  * (title-only, no cover art / album artist). We keep the order, then batch-fetch the full records
  * with {@link TidalIncludes} and — for tracks — hydrate their albums the same way
  * {@link TidalMetadataProvider} does, so a search result is exactly as complete as a direct fetch.
+ *
+ * <b>Concurrency:</b> tracks/albums/artists are three independent top-level result sets — hydrating
+ * them used to happen one after another, so total latency was the *sum* of every HTTP call. They now
+ * run on separate virtual threads and only the slowest branch determines how long the search takes.
+ * Each branch builds its own {@link ResourceIndex} seeded from the same (immutable) search response,
+ * so the branches never share mutable state with each other. Within the tracks branch, the
+ * album-hydrate and track-artist-hydrate calls are themselves independent once the tracks are known,
+ * so those two also run concurrently.
  */
 @Component
 @ConditionalOnProperty(prefix = "music.providers.tidal", name = "enabled", havingValue = "true", matchIfMissing = true)
@@ -42,12 +55,15 @@ public class TidalSearchProvider implements MusicSearchProvider {
     private final TidalMapper mapper;
     private final TidalProperties properties;
     private final ObjectMapper objectMapper;
+    private final ExecutorService executor;
 
-    public TidalSearchProvider(TidalApiClient client, TidalMapper mapper, TidalProperties properties, ObjectMapper objectMapper) {
+    public TidalSearchProvider(TidalApiClient client, TidalMapper mapper, TidalProperties properties,
+                               ObjectMapper objectMapper, @AppConfig.HttpIo ExecutorService httpIoExecutor) {
         this.client = client;
         this.mapper = mapper;
         this.properties = properties;
         this.objectMapper = objectMapper;
+        this.executor = httpIoExecutor;
     }
 
     @Override
@@ -63,73 +79,93 @@ public class TidalSearchProvider implements MusicSearchProvider {
         if (types.contains(SearchType.ARTISTS)) relationships.add(TYPE_ARTISTS);
         if (relationships.isEmpty()) return ProviderSearchResult.empty();
 
-        ResourceIndex index = new ResourceIndex();
-        index.add(client.search(query, relationships), objectMapper);
-
-        JsonApiResource searchResult = index.ofType(TYPE_SEARCH_RESULTS).stream().findFirst().orElse(null);
+        JsonApiDocument searchDoc = client.search(query, relationships);
+        JsonApiResource searchResult = seededFrom(searchDoc).ofType(TYPE_SEARCH_RESULTS).stream().findFirst().orElse(null);
         if (searchResult == null) return ProviderSearchResult.empty();
 
-        List<ProviderTrack> tracks = types.contains(SearchType.TRACKS)
-                ? hydrateTracks(index, orderedIds(searchResult, TYPE_TRACKS, limit))
-                : List.of();
-        List<ProviderAlbum> albums = types.contains(SearchType.ALBUMS)
-                ? hydrateAlbums(index, orderedIds(searchResult, TYPE_ALBUMS, limit))
-                : List.of();
-        List<ProviderArtist> artists = types.contains(SearchType.ARTISTS)
-                ? hydrateArtists(index, orderedIds(searchResult, TYPE_ARTISTS, limit))
-                : List.of();
+        List<String> trackIds = orderedIds(searchResult, TYPE_TRACKS, limit);
+        List<String> albumIds = orderedIds(searchResult, TYPE_ALBUMS, limit);
+        List<String> artistIds = orderedIds(searchResult, TYPE_ARTISTS, limit);
 
-        return new ProviderSearchResult(tracks, albums, artists);
+        // Three independent result sets — hydrate them concurrently instead of one after another.
+        CompletableFuture<List<ProviderTrack>> tracksFuture = types.contains(SearchType.TRACKS)
+                ? CompletableFuture.supplyAsync(() -> hydrateTracks(searchDoc, trackIds), executor)
+                : CompletableFuture.completedFuture(List.of());
+        CompletableFuture<List<ProviderAlbum>> albumsFuture = types.contains(SearchType.ALBUMS)
+                ? CompletableFuture.supplyAsync(() -> hydrateAlbums(searchDoc, albumIds), executor)
+                : CompletableFuture.completedFuture(List.of());
+        CompletableFuture<List<ProviderArtist>> artistsFuture = types.contains(SearchType.ARTISTS)
+                ? CompletableFuture.supplyAsync(() -> hydrateArtists(searchDoc, artistIds), executor)
+                : CompletableFuture.completedFuture(List.of());
+
+        CompletableFuture.allOf(tracksFuture, albumsFuture, artistsFuture).join();
+        return new ProviderSearchResult(tracksFuture.join(), albumsFuture.join(), artistsFuture.join());
     }
 
     // ── Hydration (Project-Info.md §20: batch, never one call per result) ────────────────────
 
-    private List<ProviderTrack> hydrateTracks(ResourceIndex index, List<String> ids) {
+    private List<ProviderTrack> hydrateTracks(JsonApiDocument searchDoc, List<String> ids) {
         if (ids.isEmpty()) return List.of();
+        ResourceIndex index = seededFrom(searchDoc);
+
         for (List<String> batch : TidalHydrator.chunks(new LinkedHashSet<>(ids), properties.batchSize())) {
             index.add(client.tracksByIds(batch, TidalIncludes.TRACK), objectMapper);
         }
+
+        // Albums and the tracks' own artists are both independent of each other at this point —
+        // run them concurrently. (Artists reachable only via an album relation, not any track's own,
+        // are skipped here for latency; they still get a photo once their own TTL refresh runs.)
         Set<String> albumIds = TidalHydrator.referencedIds(index, TYPE_TRACKS, REL_ALBUMS);
-        for (List<String> batch : TidalHydrator.chunks(albumIds, properties.batchSize())) {
-            index.add(client.albumsByIds(batch, TidalIncludes.ALBUM), objectMapper);
-        }
-        hydrateReferencedArtists(index);
-        return ids.stream().map(id -> index.get(TYPE_TRACKS, id)).flatMap(java.util.Optional::stream)
+        Set<String> artistIds = TidalHydrator.referencedIds(index, TYPE_TRACKS, REL_ARTISTS);
+
+        CompletableFuture<Void> albumsDone = runBatches(albumIds, TidalIncludes.ALBUM, index, client::albumsByIds);
+        CompletableFuture<Void> artistsDone = runBatches(artistIds, TidalIncludes.ARTIST, index, client::artistsByIds);
+        CompletableFuture.allOf(albumsDone, artistsDone).join();
+
+        return ids.stream().map(id -> index.get(TYPE_TRACKS, id)).flatMap(Optional::stream)
                 .map(r -> mapper.toTrack(r, index)).toList();
     }
 
-    private List<ProviderAlbum> hydrateAlbums(ResourceIndex index, List<String> ids) {
+    private List<ProviderAlbum> hydrateAlbums(JsonApiDocument searchDoc, List<String> ids) {
         if (ids.isEmpty()) return List.of();
+        ResourceIndex index = seededFrom(searchDoc);
+
         for (List<String> batch : TidalHydrator.chunks(new LinkedHashSet<>(ids), properties.batchSize())) {
             index.add(client.albumsByIds(batch, TidalIncludes.ALBUM), objectMapper);
         }
-        hydrateReferencedArtists(index);
-        return ids.stream().map(id -> index.get(TYPE_ALBUMS, id)).flatMap(java.util.Optional::stream)
+        Set<String> artistIds = TidalHydrator.referencedIds(index, TYPE_ALBUMS, REL_ARTISTS);
+        runBatches(artistIds, TidalIncludes.ARTIST, index, client::artistsByIds).join();
+
+        return ids.stream().map(id -> index.get(TYPE_ALBUMS, id)).flatMap(Optional::stream)
                 .map(r -> mapper.toAlbum(r, index)).toList();
     }
 
-    /**
-     * Batch-fetches full artists (profile art) for every artist referenced by a track or album
-     * currently in the index — one extra call regardless of how many distinct artists are involved
-     * (Project-Info.md §20). Without this, artists discovered only as a track/album relation would
-     * never get a photo until their own 7-day TTL happens to expire.
-     */
-    private void hydrateReferencedArtists(ResourceIndex index) {
-        Set<String> artistIds = new LinkedHashSet<>();
-        artistIds.addAll(TidalHydrator.referencedIds(index, TYPE_TRACKS, REL_ARTISTS));
-        artistIds.addAll(TidalHydrator.referencedIds(index, TYPE_ALBUMS, REL_ARTISTS));
-        for (List<String> batch : TidalHydrator.chunks(artistIds, properties.batchSize())) {
-            index.add(client.artistsByIds(batch, TidalIncludes.ARTIST), objectMapper);
-        }
-    }
-
-    private List<ProviderArtist> hydrateArtists(ResourceIndex index, List<String> ids) {
+    private List<ProviderArtist> hydrateArtists(JsonApiDocument searchDoc, List<String> ids) {
         if (ids.isEmpty()) return List.of();
+        ResourceIndex index = seededFrom(searchDoc);
+
         for (List<String> batch : TidalHydrator.chunks(new LinkedHashSet<>(ids), properties.batchSize())) {
             index.add(client.artistsByIds(batch, TidalIncludes.ARTIST), objectMapper);
         }
-        return ids.stream().map(id -> index.get(TYPE_ARTISTS, id)).flatMap(java.util.Optional::stream)
+        return ids.stream().map(id -> index.get(TYPE_ARTISTS, id)).flatMap(Optional::stream)
                 .map(r -> mapper.toArtist(r, index)).toList();
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────────────────
+
+    /** Runs every batch for one id set concurrently and merges results into {@code index} as they land. */
+    private CompletableFuture<Void> runBatches(Set<String> ids, Set<String> include, ResourceIndex index,
+                                               java.util.function.BiFunction<List<String>, Set<String>, JsonApiDocument> fetch) {
+        List<CompletableFuture<Void>> futures = TidalHydrator.chunks(ids, properties.batchSize()).stream()
+                .map(batch -> CompletableFuture.runAsync(() -> index.add(fetch.apply(batch, include), objectMapper), executor))
+                .toList();
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+    }
+
+    private ResourceIndex seededFrom(JsonApiDocument searchDoc) {
+        ResourceIndex index = new ResourceIndex();
+        index.add(searchDoc, objectMapper);
+        return index;
     }
 
     private static List<String> orderedIds(JsonApiResource searchResult, String relationship, int limit) {

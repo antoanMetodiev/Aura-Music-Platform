@@ -6,6 +6,7 @@ import com.aura.catalog.domain.model.Provider;
 import com.aura.catalog.domain.model.ProviderReference;
 import com.aura.catalog.domain.model.Track;
 import com.aura.catalog.domain.port.ProviderTrack;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,11 +26,13 @@ public class TrackRepository {
     private final JdbcClient jdbc;
     private final AlbumRepository albums;
     private final ArtistRepository artists;
+    private final ConflictRetryWriter conflictRetryWriter;
 
-    public TrackRepository(JdbcClient jdbc, AlbumRepository albums, ArtistRepository artists) {
+    public TrackRepository(JdbcClient jdbc, AlbumRepository albums, ArtistRepository artists, ConflictRetryWriter conflictRetryWriter) {
         this.jdbc = jdbc;
         this.albums = albums;
         this.artists = artists;
+        this.conflictRetryWriter = conflictRetryWriter;
     }
 
     public Optional<Track> findById(UUID id) {
@@ -52,7 +55,11 @@ public class TrackRepository {
                 .stream().map(this::hydrate).toList();
     }
 
-    /** Cascades into {@link AlbumRepository} and {@link ArtistRepository} before writing this row. */
+    /**
+     * Cascades into {@link AlbumRepository} and {@link ArtistRepository} before writing this row.
+     * See {@link ArtistRepository#upsert} for why the insert path falls back to an update on a lost
+     * race (e.g. this same track discovered concurrently via two different requests).
+     */
     @Transactional
     public Track upsert(ProviderTrack source) {
         Album album = source.album() == null ? null : albums.upsert(source.album());
@@ -63,7 +70,7 @@ public class TrackRepository {
 
         TrackRow row = existingId.isPresent()
                 ? update(existingId.get(), source, album)
-                : insert(source, ref, album);
+                : insertOrFallBackToUpdate(source, ref, album);
 
         replaceTrackArtists(row.id(), trackArtists);
         List<ProviderReference> refs = findRefs(row.id());
@@ -102,6 +109,15 @@ public class TrackRepository {
                 .param("albumId", album == null ? null : album.id())
                 .query(TrackRepository::mapRow)
                 .single();
+    }
+
+    private TrackRow insertOrFallBackToUpdate(ProviderTrack source, ProviderReference ref, Album album) {
+        try {
+            return conflictRetryWriter.runInNewTransaction(() -> insert(source, ref, album));
+        } catch (DuplicateKeyException e) {
+            UUID winnerId = findIdByProviderRef(ref).orElseThrow(() -> e);
+            return update(winnerId, source, album);
+        }
     }
 
     private TrackRow insert(ProviderTrack source, ProviderReference ref, Album album) {

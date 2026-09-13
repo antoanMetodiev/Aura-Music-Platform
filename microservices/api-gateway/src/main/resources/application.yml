@@ -45,7 +45,5 @@ management:
     tags:
       application: ${spring.application.name}
 
-logging:
-  structured:
-    format:
-      console: ecs
+# Plain, readable console logging for local dev (IntelliJ, ./gradlew bootRun). Structured JSON logs
+# live in application-prod.yml — activate with SPRING_PROFILES_ACTIVE=prod (Render deployment).

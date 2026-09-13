@@ -7,6 +7,7 @@ import com.aura.catalog.domain.model.Artwork;
 import com.aura.catalog.domain.model.Provider;
 import com.aura.catalog.domain.model.ProviderReference;
 import com.aura.catalog.domain.port.ProviderAlbum;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,10 +26,12 @@ public class AlbumRepository {
 
     private final JdbcClient jdbc;
     private final ArtistRepository artists;
+    private final ConflictRetryWriter conflictRetryWriter;
 
-    public AlbumRepository(JdbcClient jdbc, ArtistRepository artists) {
+    public AlbumRepository(JdbcClient jdbc, ArtistRepository artists, ConflictRetryWriter conflictRetryWriter) {
         this.jdbc = jdbc;
         this.artists = artists;
+        this.conflictRetryWriter = conflictRetryWriter;
     }
 
     public Optional<Album> findById(UUID id) {
@@ -43,16 +46,30 @@ public class AlbumRepository {
         return findIdByProviderRef(ref).flatMap(this::findById);
     }
 
-    /** Cascades into {@link ArtistRepository} for the album artist before writing this row. */
+    /**
+     * Cascades into {@link ArtistRepository} for the album artist before writing this row.
+     * See {@link ArtistRepository#upsert} for why the insert path falls back to an update on a lost
+     * race — the same concurrent-upsert scenario applies here whenever two tracks from the same
+     * album are hydrated in parallel.
+     */
     @Transactional
     public Album upsert(ProviderAlbum source) {
         Artist artist = source.artist() == null ? null : artists.upsert(source.artist());
         ProviderReference ref = source.ref();
         Optional<UUID> existingId = findIdByProviderRef(ref);
 
-        AlbumRow row = existingId.isPresent() ? update(existingId.get(), source, artist) : insert(source, ref, artist);
+        AlbumRow row = existingId.isPresent() ? update(existingId.get(), source, artist) : insertOrFallBackToUpdate(source, ref, artist);
         List<ProviderReference> refs = findRefs(row.id());
         return toAlbum(row, artist, refs);
+    }
+
+    private AlbumRow insertOrFallBackToUpdate(ProviderAlbum source, ProviderReference ref, Artist artist) {
+        try {
+            return conflictRetryWriter.runInNewTransaction(() -> insert(source, ref, artist));
+        } catch (DuplicateKeyException e) {
+            UUID winnerId = findIdByProviderRef(ref).orElseThrow(() -> e);
+            return update(winnerId, source, artist);
+        }
     }
 
     // ── Internals ──────────────────────────────────────────────────────────────────────────

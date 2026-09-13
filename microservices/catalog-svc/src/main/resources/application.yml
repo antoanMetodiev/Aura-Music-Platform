@@ -14,9 +14,11 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
     hikari:
-      # Small on purpose: 7 services × a large pool exhausts Postgres' connection limit fast
-      # (Free/small Supabase tiers cap around 60). Keep this low and let the pooler absorb bursts.
-      maximum-pool-size: 5
+      # Modest on purpose: 7 services × a large pool exhausts Postgres' connection limit fast
+      # (Free/small Supabase tiers cap around 60). 10 leaves headroom for the other services while
+      # still letting one search's parallel track/album/artist upserts (CatalogService.upsertAll)
+      # actually run concurrently instead of queuing behind a too-small pool.
+      maximum-pool-size: 10
       minimum-idle: 1
       pool-name: catalog-svc-pool
 
@@ -63,6 +65,14 @@ resilience4j:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 30s
         permitted-number-of-calls-in-half-open-state: 5
+  # Resilience4j's own default TimeLimiter timeout is 1s, applied on top of (and independent from)
+  # our RetryTemplate's own backoff in TidalApiClient — with search now firing several TIDAL calls
+  # concurrently per request, a real call needs more headroom than that default before it's judged
+  # "hung" and cancelled.
+  timelimiter:
+    instances:
+      tidal:
+        timeout-duration: 8s
 
 management:
   endpoints:
@@ -78,7 +88,6 @@ management:
     tags:
       application: ${spring.application.name}
 
-logging:
-  structured:
-    format:
-      console: ecs
+# Plain, readable console logging for local dev (IntelliJ, ./gradlew bootRun). Structured JSON logs
+# (needed for log aggregation once this actually runs somewhere) live in application-prod.yml —
+# activate with SPRING_PROFILES_ACTIVE=prod, which is what the Render deployment will set.

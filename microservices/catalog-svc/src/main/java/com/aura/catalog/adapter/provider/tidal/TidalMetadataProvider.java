@@ -11,10 +11,13 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import com.aura.catalog.config.AppConfig;
+
+import java.util.concurrent.ExecutorService;
 
 import static com.aura.catalog.adapter.provider.tidal.TidalMapper.REL_ALBUMS;
 import static com.aura.catalog.adapter.provider.tidal.TidalMapper.REL_ARTISTS;
@@ -39,12 +42,15 @@ public class TidalMetadataProvider implements MusicMetadataProvider {
     private final TidalMapper mapper;
     private final TidalProperties properties;
     private final ObjectMapper objectMapper;
+    private final ExecutorService executor;
 
-    public TidalMetadataProvider(TidalApiClient client, TidalMapper mapper, TidalProperties properties, ObjectMapper objectMapper) {
+    public TidalMetadataProvider(TidalApiClient client, TidalMapper mapper, TidalProperties properties,
+                                 ObjectMapper objectMapper, @AppConfig.HttpIo ExecutorService httpIoExecutor) {
         this.client = client;
         this.mapper = mapper;
         this.properties = properties;
         this.objectMapper = objectMapper;
+        this.executor = httpIoExecutor;
     }
 
     @Override
@@ -88,24 +94,24 @@ public class TidalMetadataProvider implements MusicMetadataProvider {
     // ── Helpers ────────────────────────────────────────────────────────────────────────────
 
     /**
-     * Batch-fetches full albums (cover art + album artist) for every album referenced by a track in
-     * the index, then full artists (profile art) for every artist referenced by those tracks or
-     * albums. Two extra calls total, regardless of how many distinct albums/artists are involved
-     * (Project-Info.md §20: batch, never one call per result) — so a track with 3 featured artists
-     * costs the same as one with a single artist.
+     * Batch-fetches full albums (cover art + album artist) for every album referenced by a track,
+     * and full artists (profile art) for every artist those tracks reference directly — the two run
+     * concurrently since neither depends on the other. (An artist reachable only via an album's own
+     * relation, not any track's, is skipped here for latency; it still gets a photo once its own
+     * 7-day TTL refresh runs — Project-Info.md §14.)
      */
     private void hydrateAlbumsAndArtists(ResourceIndex index) {
         Set<String> albumIds = TidalHydrator.referencedIds(index, TYPE_TRACKS, REL_ALBUMS);
-        for (List<String> batch : TidalHydrator.chunks(albumIds, properties.batchSize())) {
-            index.add(client.albumsByIds(batch, TidalIncludes.ALBUM), objectMapper);
-        }
+        Set<String> artistIds = TidalHydrator.referencedIds(index, TYPE_TRACKS, REL_ARTISTS);
 
-        Set<String> artistIds = new LinkedHashSet<>();
-        artistIds.addAll(TidalHydrator.referencedIds(index, TYPE_TRACKS, REL_ARTISTS));
-        artistIds.addAll(TidalHydrator.referencedIds(index, TYPE_ALBUMS, REL_ARTISTS));
-        for (List<String> batch : TidalHydrator.chunks(artistIds, properties.batchSize())) {
-            index.add(client.artistsByIds(batch, TidalIncludes.ARTIST), objectMapper);
+        List<CompletableFuture<Void>> futures = new java.util.ArrayList<>();
+        for (List<String> batch : TidalHydrator.chunks(albumIds, properties.batchSize())) {
+            futures.add(CompletableFuture.runAsync(() -> index.add(client.albumsByIds(batch, TidalIncludes.ALBUM), objectMapper), executor));
         }
+        for (List<String> batch : TidalHydrator.chunks(artistIds, properties.batchSize())) {
+            futures.add(CompletableFuture.runAsync(() -> index.add(client.artistsByIds(batch, TidalIncludes.ARTIST), objectMapper), executor));
+        }
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
     }
 
     private ResourceIndex indexOf(JsonApiDocument doc) {

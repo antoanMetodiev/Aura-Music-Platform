@@ -50,7 +50,33 @@
   "search": {
     "placeholder": "Search tracks, artists, albums, friends…",
     "label": "Search",
-    "clear": "Clear search"
+    "clear": "Clear search",
+    "browseAll": "Browse all",
+    "topResult": "Top result",
+    "filters": {
+      "all": "All",
+      "songs": "Songs",
+      "albums": "Albums",
+      "artists": "Artists"
+    },
+    "noResults": {
+      "title": "No results for \"{query}\"",
+      "description": "Try searching for something else, or check the spelling."
+    },
+    "unavailable": {
+      "title": "Search is unavailable",
+      "description": "We could not reach the music catalog. Make sure the backend is running."
+    },
+    "genres": {
+      "pop": "Pop",
+      "hipHop": "Hip-Hop",
+      "rock": "Rock",
+      "electronic": "Electronic",
+      "indie": "Indie",
+      "latino": "Latino",
+      "rnb": "R&B",
+      "chill": "Chill"
+    }
   },
   "panel": {
     "label": "Side panel",

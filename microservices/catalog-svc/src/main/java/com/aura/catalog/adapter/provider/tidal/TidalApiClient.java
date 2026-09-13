@@ -133,6 +133,7 @@ public class TidalApiClient {
                 try {
                     return retry.execute(() -> doGet(uri));
                 } catch (RetryException e) {
+                    log.warn("TIDAL retries exhausted for {}", uri, e.getLastException());
                     throw new ProviderUnavailableException(Provider.TIDAL, e.getLastException());
                 }
             });
@@ -140,6 +141,7 @@ public class TidalApiClient {
             throw e;
         } catch (RuntimeException e) {
             // Circuit open (CallNotPermittedException) or any other breaker-level failure.
+            log.warn("Unexpected failure calling TIDAL for {}", uri, e);
             throw new ProviderUnavailableException(Provider.TIDAL, e);
         }
     }

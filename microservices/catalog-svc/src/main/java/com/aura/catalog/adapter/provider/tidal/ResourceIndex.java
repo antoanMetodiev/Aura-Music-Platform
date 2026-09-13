@@ -5,18 +5,22 @@ import com.aura.catalog.adapter.provider.tidal.dto.JsonApiResource;
 import com.aura.catalog.adapter.provider.tidal.dto.JsonApiResourceId;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Flat lookup of every JSON:API resource we've fetched for one operation, keyed by {@code type:id}.
  * Lets the mapper resolve relationships (track → album → cover art) across several responses.
+ *
+ * Backed by a {@link ConcurrentHashMap} so several hydration calls can run in parallel (Project-Info.md
+ * §20 batching + the need for low search latency) and {@link #add} from different threads safely —
+ * callers still {@code .join()} every future before reading, so there's no concurrent read-during-write.
  */
 final class ResourceIndex {
 
-    private final Map<String, JsonApiResource> byKey = new HashMap<>();
+    private final Map<String, JsonApiResource> byKey = new ConcurrentHashMap<>();
 
     void add(JsonApiDocument document, ObjectMapper mapper) {
         if (document == null) return;

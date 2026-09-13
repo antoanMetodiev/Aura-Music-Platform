@@ -1,0 +1,7 @@
+# Activated via SPRING_PROFILES_ACTIVE=prod (Render deployment). Structured JSON console logs are
+# what a log aggregator wants; a human reading them raw in a terminal is exactly what we DON'T want
+# for local dev — see application.yml's comment.
+logging:
+  structured:
+    format:
+      console: ecs

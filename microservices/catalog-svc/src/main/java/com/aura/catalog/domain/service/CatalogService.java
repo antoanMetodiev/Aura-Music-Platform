@@ -1,5 +1,6 @@
 package com.aura.catalog.domain.service;
 
+import com.aura.catalog.config.AppConfig;
 import com.aura.catalog.config.CatalogProperties;
 import com.aura.catalog.domain.model.Album;
 import com.aura.catalog.domain.model.Artist;
@@ -20,6 +21,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -47,17 +50,20 @@ public class CatalogService {
     private final MusicSearchProvider search;
     private final CatalogProperties properties;
     private final Clock clock;
+    private final ExecutorService executor;
 
     public CatalogService(CatalogStore store,
                           MusicMetadataProvider metadata,
                           MusicSearchProvider search,
                           CatalogProperties properties,
-                          Clock clock) {
+                          Clock clock,
+                          @AppConfig.DbWrite ExecutorService dbWriteExecutor) {
         this.store = store;
         this.metadata = metadata;
         this.search = search;
         this.properties = properties;
         this.clock = clock;
+        this.executor = dbWriteExecutor;
     }
 
     // ── Search ─────────────────────────────────────────────────────────────────────────────
@@ -70,13 +76,31 @@ public class CatalogService {
 
         ProviderSearchResult result = search.search(query, effectiveTypes, effectiveLimit);
 
-        List<Track> tracks = result.tracks().stream().map(store::upsertTrack).toList();
-        List<Album> albums = result.albums().stream().map(store::upsertAlbum).toList();
-        List<Artist> artists = result.artists().stream().map(store::upsertArtist).toList();
+        // Persisting to our own catalog cache is pure write-behind (Project-Info.md §14) — each
+        // track/album/artist upsert cascades into several sequential Postgres round trips, so
+        // running them one after another made N results cost N times that. Run them concurrently
+        // instead; order is preserved because each future is joined from the same list position it
+        // was created at, regardless of which one finished first.
+        CompletableFuture<List<Track>> tracksFuture = upsertAll(result.tracks(), store::upsertTrack);
+        CompletableFuture<List<Album>> albumsFuture = upsertAll(result.albums(), store::upsertAlbum);
+        CompletableFuture<List<Artist>> artistsFuture = upsertAll(result.artists(), store::upsertArtist);
+        CompletableFuture.allOf(tracksFuture, albumsFuture, artistsFuture).join();
+
+        List<Track> tracks = tracksFuture.join();
+        List<Album> albums = albumsFuture.join();
+        List<Artist> artists = artistsFuture.join();
 
         log.debug("search '{}' -> {} tracks, {} albums, {} artists persisted",
                 query, tracks.size(), albums.size(), artists.size());
         return new SearchResult(query, tracks, albums, artists);
+    }
+
+    private <T, R> CompletableFuture<List<R>> upsertAll(List<T> items, Function<T, R> upsert) {
+        List<CompletableFuture<R>> futures = items.stream()
+                .map(item -> CompletableFuture.supplyAsync(() -> upsert.apply(item), executor))
+                .toList();
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .thenApply(v -> futures.stream().map(CompletableFuture::join).toList());
     }
 
     // ── Tracks ─────────────────────────────────────────────────────────────────────────────

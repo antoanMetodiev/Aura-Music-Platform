@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { Locale } from "@/i18n/routing";
-import { ComingSoon } from "@/components/common/ComingSoon";
+import { GenreBrowseGrid } from "@/features/search/components/GenreBrowseGrid";
 
 export async function generateMetadata({ params }: PageProps<"/[locale]/search">): Promise<Metadata> {
   const { locale } = (await params) as { locale: Locale };
@@ -9,8 +9,16 @@ export async function generateMetadata({ params }: PageProps<"/[locale]/search">
   return { title: t("search") };
 }
 
-export default async function Page({ params }: PageProps<"/[locale]/search">) {
+/** Empty search state — genre browse grid, same shape as Spotify's "Browse all" (FRONTEND.md §1.1). */
+export default async function SearchPage({ params }: PageProps<"/[locale]/search">) {
   const { locale } = (await params) as { locale: Locale };
   setRequestLocale(locale);
-  return <ComingSoon titleKey="search" />;
+  const t = await getTranslations("search");
+
+  return (
+    <div className="px-3 py-6 sm:px-5">
+      <h1 className="mb-4 text-xl font-semibold tracking-tight sm:text-2xl">{t("browseAll")}</h1>
+      <GenreBrowseGrid />
+    </div>
+  );
 }
