@@ -1,0 +1,40 @@
+{
+  "data": {
+    "id": "251380837",
+    "type": "tracks",
+    "attributes": {
+      "title": "BIRDS OF A FEATHER",
+      "version": null,
+      "isrc": "USUM72400123",
+      "duration": "PT3M30S",
+      "explicit": false,
+      "popularity": 0.92
+    },
+    "relationships": {
+      "albums": { "data": [{ "id": "360095579", "type": "albums" }] },
+      "artists": { "data": [{ "id": "7514330", "type": "artists" }] }
+    }
+  },
+  "included": [
+    {
+      "id": "360095579",
+      "type": "albums",
+      "attributes": {
+        "title": "HIT ME HARD AND SOFT",
+        "albumType": "ALBUM",
+        "releaseDate": "2024-05-17",
+        "explicit": false,
+        "numberOfItems": 10,
+        "popularity": 0.9
+      }
+    },
+    {
+      "id": "7514330",
+      "type": "artists",
+      "attributes": {
+        "name": "Billie Eilish",
+        "popularity": 0.95
+      }
+    }
+  ]
+}

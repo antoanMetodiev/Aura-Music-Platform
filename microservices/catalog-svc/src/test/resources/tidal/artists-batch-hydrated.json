@@ -1,0 +1,24 @@
+{
+  "data": [
+    {
+      "id": "7514330",
+      "type": "artists",
+      "attributes": { "name": "Billie Eilish", "popularity": 0.95 },
+      "relationships": {
+        "profileArt": { "data": [{ "id": "artwork-artist-1", "type": "artworks" }] }
+      }
+    }
+  ],
+  "included": [
+    {
+      "id": "artwork-artist-1",
+      "type": "artworks",
+      "attributes": {
+        "mediaType": "IMAGE",
+        "files": [
+          { "href": "https://resources.tidal.com/images/artist-750.jpg", "meta": { "width": 750, "height": 750 } }
+        ]
+      }
+    }
+  ]
+}

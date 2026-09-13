@@ -1,0 +1,53 @@
+{
+  "data": [
+    {
+      "id": "251380837",
+      "type": "tracks",
+      "attributes": {
+        "title": "BIRDS OF A FEATHER",
+        "duration": "PT3M30S",
+        "isrc": "USUM72400123",
+        "explicit": false,
+        "popularity": 0.92
+      },
+      "relationships": {
+        "albums": { "data": [{ "id": "360095579", "type": "albums" }] },
+        "artists": { "data": [{ "id": "7514330", "type": "artists" }] }
+      }
+    },
+    {
+      "id": "999888777",
+      "type": "tracks",
+      "attributes": {
+        "title": "WILDFLOWER",
+        "duration": "PT4M21S",
+        "isrc": "USUM72400124",
+        "explicit": false,
+        "popularity": 0.8
+      },
+      "relationships": {
+        "albums": { "data": [{ "id": "360095579", "type": "albums" }] },
+        "artists": { "data": [{ "id": "7514330", "type": "artists" }] }
+      }
+    }
+  ],
+  "included": [
+    {
+      "id": "360095579",
+      "type": "albums",
+      "attributes": {
+        "title": "HIT ME HARD AND SOFT",
+        "albumType": "ALBUM",
+        "releaseDate": "2024-05-17",
+        "explicit": false,
+        "numberOfItems": 10,
+        "popularity": 0.9
+      }
+    },
+    {
+      "id": "7514330",
+      "type": "artists",
+      "attributes": { "name": "Billie Eilish", "popularity": 0.95 }
+    }
+  ]
+}

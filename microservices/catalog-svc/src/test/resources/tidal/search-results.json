@@ -1,0 +1,38 @@
+{
+  "data": {
+    "id": "search-trk-001",
+    "type": "searchResults",
+    "attributes": {
+      "query": "billie eilish",
+      "trackingId": "5896e37d-e847-4a11-9a1e-000000000000"
+    },
+    "relationships": {
+      "tracks": {
+        "data": [
+          { "id": "251380837", "type": "tracks" },
+          { "id": "999888777", "type": "tracks" }
+        ]
+      },
+      "artists": {
+        "data": [{ "id": "7514330", "type": "artists" }]
+      }
+    }
+  },
+  "included": [
+    {
+      "id": "251380837",
+      "type": "tracks",
+      "attributes": { "title": "BIRDS OF A FEATHER", "duration": "PT3M30S", "explicit": false, "popularity": 0.92 }
+    },
+    {
+      "id": "999888777",
+      "type": "tracks",
+      "attributes": { "title": "WILDFLOWER", "duration": "PT4M21S", "explicit": false, "popularity": 0.8 }
+    },
+    {
+      "id": "7514330",
+      "type": "artists",
+      "attributes": { "name": "Billie Eilish", "popularity": 0.95 }
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: api-gateway
+
+  # Loads a local, gitignored `.env` file — same mechanism as every other Aura service.
+  config:
+    import: "optional:file:.env[.properties]"
+
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # The gateway has no business logic and no database (Project-Info.md §10) — it only
+          # forwards to the right service. One route per bounded context; add the rest here as
+          # each service comes online (social, playback, library, recommendations, activity).
+          routes:
+            - id: catalog-svc
+              uri: ${CATALOG_SVC_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/catalog/**
+
+          globalcors:
+            cors-configurations:
+              "[/**]":
+                allowedOrigins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+                allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+                allowedHeaders: "*"
+                allowCredentials: true
+                maxAge: 3600
+
+server:
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  structured:
+    format:
+      console: ecs

@@ -1,0 +1,84 @@
+spring:
+  application:
+    name: catalog-svc
+
+  # Loads a local, gitignored `.env` file (KEY=VALUE lines) the same way front-end/.env works —
+  # convenient for local dev; real deployments (Render) set these as actual environment variables.
+  config:
+    import: "optional:file:.env[.properties]"
+
+  # Supabase Postgres — always through the Supavisor pooler (port 6543, transaction mode), never
+  # the direct connection. See the connection-pool sizing note under `datasource.hikari` below.
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      # Small on purpose: 7 services × a large pool exhausts Postgres' connection limit fast
+      # (Free/small Supabase tiers cap around 60). Keep this low and let the pooler absorb bursts.
+      maximum-pool-size: 5
+      minimum-idle: 1
+      pool-name: catalog-svc-pool
+
+  flyway:
+    default-schema: catalog
+    schemas: catalog
+    locations: classpath:db/migration
+
+  # RestClient timeouts for every outbound HTTP call this service makes (TIDAL included).
+  http:
+    client:
+      connect-timeout: 3s
+      read-timeout: 8s
+
+server:
+  port: ${PORT:8081}
+
+music:
+  providers:
+    tidal:
+      enabled: ${TIDAL_ENABLED:true}
+      client-id: ${TIDAL_CLIENT_ID}
+      client-secret: ${TIDAL_CLIENT_SECRET}
+      country-code: ${TIDAL_COUNTRY_CODE:BG}
+    # Cross-provider playback stays off by default until the compliance gate is cleared
+    # (Project-Info.md §37) — Catalog doesn't act on this flag itself, but it's declared here so
+    # every service reads the same config surface.
+    crossProviderPlayback:
+      enabled: false
+
+aura:
+  catalog:
+    metadata-ttl: 7d
+    default-search-limit: 10
+    max-search-limit: 20
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      tidal:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  structured:
+    format:
+      console: ecs
