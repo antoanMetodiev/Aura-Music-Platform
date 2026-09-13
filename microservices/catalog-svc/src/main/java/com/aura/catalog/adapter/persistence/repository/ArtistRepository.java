@@ -13,7 +13,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -44,6 +50,38 @@ public class ArtistRepository {
 
     public Optional<Artist> findByProviderRef(ProviderReference ref) {
         return findIdByProviderRef(ref).flatMap(this::findById);
+    }
+
+    /** Input order preserved; ids with no row are skipped. Two round trips regardless of list size. */
+    public List<Artist> findByIds(Collection<UUID> ids) {
+        Map<UUID, Artist> byId = findByIdsMap(ids);
+        return ids.stream().map(byId::get).filter(Objects::nonNull).toList();
+    }
+
+    Map<UUID, Artist> findByIdsMap(Collection<UUID> ids) {
+        if (ids.isEmpty()) return Map.of();
+        List<UUID> distinct = List.copyOf(new LinkedHashSet<>(ids));
+        List<ArtistRow> rows = jdbc.sql("SELECT * FROM catalog.artists WHERE id IN (:ids)")
+                .param("ids", distinct)
+                .query(ArtistRepository::mapRow)
+                .list();
+        Map<UUID, List<ProviderReference>> refs = findRefsByIds(distinct);
+        Map<UUID, Artist> result = new HashMap<>();
+        for (ArtistRow row : rows) {
+            result.put(row.id(), toArtist(row, refs.getOrDefault(row.id(), List.of())));
+        }
+        return result;
+    }
+
+    private Map<UUID, List<ProviderReference>> findRefsByIds(List<UUID> ids) {
+        Map<UUID, List<ProviderReference>> result = new HashMap<>();
+        jdbc.sql("SELECT artist_id, provider, provider_resource_id FROM catalog.artist_provider_refs WHERE artist_id IN (:ids)")
+                .param("ids", ids)
+                .query((rs, rowNum) -> Map.entry((UUID) rs.getObject("artist_id"),
+                        new ProviderReference(Provider.valueOf(rs.getString("provider")), rs.getString("provider_resource_id"))))
+                .list()
+                .forEach(e -> result.computeIfAbsent(e.getKey(), k -> new ArrayList<>()).add(e.getValue()));
+        return result;
     }
 
     /**

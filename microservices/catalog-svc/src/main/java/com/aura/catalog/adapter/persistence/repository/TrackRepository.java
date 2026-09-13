@@ -15,7 +15,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -45,6 +50,48 @@ public class TrackRepository {
 
     public Optional<Track> findByProviderRef(ProviderReference ref) {
         return findIdByProviderRef(ref).flatMap(this::findById);
+    }
+
+    /**
+     * Input order preserved; ids with no row are skipped. A fixed handful of round trips for the
+     * whole list (tracks, their albums + album artists, track artists, refs) instead of ~4 per track.
+     */
+    public List<Track> findByIds(Collection<UUID> ids) {
+        if (ids.isEmpty()) return List.of();
+        List<UUID> distinct = List.copyOf(new LinkedHashSet<>(ids));
+        List<TrackRow> rows = jdbc.sql("SELECT * FROM catalog.tracks WHERE id IN (:ids)")
+                .param("ids", distinct)
+                .query(TrackRepository::mapRow)
+                .list();
+
+        Map<UUID, Album> albumsById = albums.findByIdsMap(
+                rows.stream().map(TrackRow::albumId).filter(Objects::nonNull).toList());
+
+        Map<UUID, List<UUID>> artistIdsByTrack = new HashMap<>();
+        jdbc.sql("SELECT track_id, artist_id FROM catalog.track_artists WHERE track_id IN (:ids) ORDER BY track_id, position")
+                .param("ids", distinct)
+                .query((rs, rowNum) -> Map.entry((UUID) rs.getObject("track_id"), (UUID) rs.getObject("artist_id")))
+                .list()
+                .forEach(e -> artistIdsByTrack.computeIfAbsent(e.getKey(), k -> new ArrayList<>()).add(e.getValue()));
+        Map<UUID, Artist> artistsById = artists.findByIdsMap(
+                artistIdsByTrack.values().stream().flatMap(List::stream).toList());
+
+        Map<UUID, List<ProviderReference>> refs = new HashMap<>();
+        jdbc.sql("SELECT track_id, provider, provider_resource_id FROM catalog.track_provider_refs WHERE track_id IN (:ids)")
+                .param("ids", distinct)
+                .query((rs, rowNum) -> Map.entry((UUID) rs.getObject("track_id"),
+                        new ProviderReference(Provider.valueOf(rs.getString("provider")), rs.getString("provider_resource_id"))))
+                .list()
+                .forEach(e -> refs.computeIfAbsent(e.getKey(), k -> new ArrayList<>()).add(e.getValue()));
+
+        Map<UUID, Track> byId = new HashMap<>();
+        for (TrackRow row : rows) {
+            Album album = row.albumId() == null ? null : albumsById.get(row.albumId());
+            List<Artist> trackArtists = artistIdsByTrack.getOrDefault(row.id(), List.of()).stream()
+                    .map(artistsById::get).filter(Objects::nonNull).toList();
+            byId.put(row.id(), toTrack(row, album, trackArtists, refs.getOrDefault(row.id(), List.of())));
+        }
+        return ids.stream().map(byId::get).filter(Objects::nonNull).toList();
     }
 
     public List<Track> findByIsrc(String isrc) {

@@ -2,9 +2,12 @@ package com.aura.catalog.domain.port;
 
 import com.aura.catalog.domain.model.Album;
 import com.aura.catalog.domain.model.Artist;
+import com.aura.catalog.domain.model.CachedSearch;
 import com.aura.catalog.domain.model.ProviderReference;
+import com.aura.catalog.domain.model.SearchType;
 import com.aura.catalog.domain.model.Track;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,4 +37,18 @@ public interface CatalogStore {
     Album upsertAlbum(ProviderAlbum album);
 
     Artist upsertArtist(ProviderArtist artist);
+
+    // ── Batch reads (input order preserved, unknown ids skipped) ──────────────────────────
+
+    List<Track> findTracksByIds(Collection<UUID> ids);
+
+    List<Album> findAlbumsByIds(Collection<UUID> ids);
+
+    List<Artist> findArtistsByIds(Collection<UUID> ids);
+
+    // ── Search result cache ────────────────────────────────────────────────────────────────
+
+    Optional<CachedSearch> findCachedSearch(String normalizedQuery, SearchType type);
+
+    void saveCachedSearch(String normalizedQuery, SearchType type, List<UUID> entityIds);
 }

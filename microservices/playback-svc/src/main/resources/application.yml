@@ -1,0 +1,91 @@
+spring:
+  application:
+    name: playback-svc
+
+  # Loads a local, gitignored `.env` file — same mechanism as every other Aura service.
+  config:
+    import: "optional:file:.env[.properties]"
+
+  # Same Supabase Postgres project as the other services, own schema (`playback`) — always through
+  # the Supavisor pooler (port 6543, transaction mode), never the direct connection.
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 1
+      pool-name: playback-svc-pool
+
+  flyway:
+    default-schema: playback
+    schemas: playback
+    locations: classpath:db/migration
+
+  # RestClient timeouts for every outbound HTTP call this service makes (YouTube, catalog-svc).
+  http:
+    client:
+      connect-timeout: 3s
+      read-timeout: 8s
+
+server:
+  port: ${PORT:8082}
+
+music:
+  providers:
+    youtube:
+      enabled: ${YOUTUBE_ENABLED:true}
+      api-key: ${YOUTUBE_API_KEY}
+      region-code: ${YOUTUBE_REGION_CODE:BG}
+
+aura:
+  # Talks to catalog-svc directly (service-to-service), not through the gateway.
+  catalog-client:
+    base-url: ${CATALOG_SVC_URL:http://localhost:8081}
+
+# playback.matching.* overrides MatchingProperties' scoring weights/thresholds (Project-Info.md
+# §18) — left at their documented defaults for now; nothing to override yet.
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      youtube:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+      catalog:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+  # Resilience4j's own default TimeLimiter timeout is 1s — too tight even for a single real call
+  # once you count connection setup, so every instance gets the same explicit headroom catalog-svc
+  # needed for TIDAL.
+  timelimiter:
+    instances:
+      youtube:
+        timeout-duration: 8s
+      catalog:
+        timeout-duration: 8s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# Plain, readable console logging for local dev (IntelliJ, ./gradlew bootRun). Structured JSON logs
+# live in application-prod.yml — activate with SPRING_PROFILES_ACTIVE=prod (Render deployment).

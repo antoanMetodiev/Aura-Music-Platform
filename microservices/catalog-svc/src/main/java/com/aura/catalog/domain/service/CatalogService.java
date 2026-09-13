@@ -12,16 +12,23 @@ import com.aura.catalog.domain.port.CatalogStore;
 import com.aura.catalog.domain.port.MusicMetadataProvider;
 import com.aura.catalog.domain.port.MusicSearchProvider;
 import com.aura.catalog.domain.port.ProviderSearchResult;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -51,48 +58,168 @@ public class CatalogService {
     private final CatalogProperties properties;
     private final Clock clock;
     private final ExecutorService executor;
+    private final ExecutorService refreshExecutor;
+    private final Cache<String, Hydrated> memory;
+    private final ConcurrentHashMap<String, CompletableFuture<Void>> refreshing = new ConcurrentHashMap<>();
 
     public CatalogService(CatalogStore store,
                           MusicMetadataProvider metadata,
                           MusicSearchProvider search,
                           CatalogProperties properties,
                           Clock clock,
-                          @AppConfig.DbWrite ExecutorService dbWriteExecutor) {
+                          @AppConfig.DbWrite ExecutorService dbWriteExecutor,
+                          @AppConfig.HttpIo ExecutorService httpIoExecutor) {
         this.store = store;
         this.metadata = metadata;
         this.search = search;
         this.properties = properties;
         this.clock = clock;
         this.executor = dbWriteExecutor;
+        this.refreshExecutor = httpIoExecutor;
+        this.memory = Caffeine.newBuilder()
+                .maximumSize(2_000)
+                .expireAfterWrite(properties.searchMemoryTtl())
+                .build();
     }
 
     // ── Search ─────────────────────────────────────────────────────────────────────────────
 
+    /**
+     * Three tiers, checked per requested type (Project-Info.md §14, §20):
+     * <ol>
+     *   <li>in-memory (Caffeine) — hydrated results for hot queries, {@code searchMemoryTtl};</li>
+     *   <li>Postgres — {@code catalog.search_results} holds the ordered ids a query returned, and the
+     *       entities themselves already live in our catalog, so a repeat search never touches TIDAL;</li>
+     *   <li>TIDAL — only for a type this query has never been asked for.</li>
+     * </ol>
+     * A cached list older than {@code searchTtl} is still served immediately and refreshed in the
+     * background (stale-while-revalidate), deduplicated so concurrent stale hits trigger one refresh.
+     * The provider is always asked for {@code maxSearchLimit} results so the cache is independent of
+     * the caller's limit — a later request for more items is a hit too.
+     */
     public SearchResult search(String query, Set<SearchType> types, Integer limit) {
         int effectiveLimit = limit == null
                 ? properties.defaultSearchLimit()
                 : Math.min(Math.max(limit, 1), properties.maxSearchLimit());
         Set<SearchType> effectiveTypes = types == null || types.isEmpty() ? SearchType.ALL : types;
+        String normalized = normalizeQuery(query);
 
-        ProviderSearchResult result = search.search(query, effectiveTypes, effectiveLimit);
+        Map<SearchType, List<?>> served = new EnumMap<>(SearchType.class);
+        Set<SearchType> missing = EnumSet.noneOf(SearchType.class);
+        Set<SearchType> stale = EnumSet.noneOf(SearchType.class);
 
-        // Persisting to our own catalog cache is pure write-behind (Project-Info.md §14) — each
-        // track/album/artist upsert cascades into several sequential Postgres round trips, so
-        // running them one after another made N results cost N times that. Run them concurrently
-        // instead; order is preserved because each future is joined from the same list position it
-        // was created at, regardless of which one finished first.
+        for (SearchType type : effectiveTypes) {
+            Hydrated hit = fromMemory(normalized, type);
+            if (hit == null) hit = fromDatabase(normalized, type);
+            if (hit == null) {
+                missing.add(type);
+                continue;
+            }
+            served.put(type, hit.items());
+            if (isExpired(hit.fetchedAt(), properties.searchTtl())) stale.add(type);
+        }
+
+        if (!missing.isEmpty()) {
+            served.putAll(fetchAndPersist(normalized, query, missing));
+        }
+        if (!stale.isEmpty()) {
+            refreshInBackground(normalized, query, stale);
+        }
+
+        log.debug("search '{}' -> from provider: {}, stale (refreshing in background): {}", query, missing, stale);
+        return new SearchResult(query,
+                take(served, SearchType.TRACKS, effectiveLimit),
+                take(served, SearchType.ALBUMS, effectiveLimit),
+                take(served, SearchType.ARTISTS, effectiveLimit));
+    }
+
+    private Hydrated fromMemory(String normalized, SearchType type) {
+        return memory.getIfPresent(memoryKey(normalized, type));
+    }
+
+    private Hydrated fromDatabase(String normalized, SearchType type) {
+        return store.findCachedSearch(normalized, type).map(cached -> {
+            List<?> items = switch (type) {
+                case TRACKS -> store.findTracksByIds(cached.entityIds());
+                case ALBUMS -> store.findAlbumsByIds(cached.entityIds());
+                case ARTISTS -> store.findArtistsByIds(cached.entityIds());
+            };
+            Hydrated hydrated = new Hydrated(items, cached.fetchedAt());
+            memory.put(memoryKey(normalized, type), hydrated);
+            return hydrated;
+        }).orElse(null);
+    }
+
+    /** Asks the provider for {@code types}, persists every entity it returned, caches the id lists. */
+    private Map<SearchType, List<?>> fetchAndPersist(String normalized, String rawQuery, Set<SearchType> types) {
+        ProviderSearchResult result = search.search(rawQuery, types, properties.maxSearchLimit());
+
+        // Each track/album/artist upsert cascades into several sequential Postgres round trips, so
+        // running them one after another made N results cost N times that. Run them concurrently;
+        // order is preserved because each future is joined from its original list position.
         CompletableFuture<List<Track>> tracksFuture = upsertAll(result.tracks(), store::upsertTrack);
         CompletableFuture<List<Album>> albumsFuture = upsertAll(result.albums(), store::upsertAlbum);
         CompletableFuture<List<Artist>> artistsFuture = upsertAll(result.artists(), store::upsertArtist);
         CompletableFuture.allOf(tracksFuture, albumsFuture, artistsFuture).join();
 
-        List<Track> tracks = tracksFuture.join();
-        List<Album> albums = albumsFuture.join();
-        List<Artist> artists = artistsFuture.join();
+        Instant now = clock.instant();
+        Map<SearchType, List<?>> fetched = new EnumMap<>(SearchType.class);
+        if (types.contains(SearchType.TRACKS)) {
+            List<Track> tracks = tracksFuture.join();
+            remember(normalized, SearchType.TRACKS, tracks, tracks.stream().map(Track::id).toList(), now);
+            fetched.put(SearchType.TRACKS, tracks);
+        }
+        if (types.contains(SearchType.ALBUMS)) {
+            List<Album> albums = albumsFuture.join();
+            remember(normalized, SearchType.ALBUMS, albums, albums.stream().map(Album::id).toList(), now);
+            fetched.put(SearchType.ALBUMS, albums);
+        }
+        if (types.contains(SearchType.ARTISTS)) {
+            List<Artist> artists = artistsFuture.join();
+            remember(normalized, SearchType.ARTISTS, artists, artists.stream().map(Artist::id).toList(), now);
+            fetched.put(SearchType.ARTISTS, artists);
+        }
+        return fetched;
+    }
 
-        log.debug("search '{}' -> {} tracks, {} albums, {} artists persisted",
-                query, tracks.size(), albums.size(), artists.size());
-        return new SearchResult(query, tracks, albums, artists);
+    private void remember(String normalized, SearchType type, List<?> items, List<UUID> ids, Instant now) {
+        store.saveCachedSearch(normalized, type, ids);
+        memory.put(memoryKey(normalized, type), new Hydrated(items, now));
+    }
+
+    private void refreshInBackground(String normalized, String rawQuery, Set<SearchType> types) {
+        String key = normalized + "|" + types;
+        refreshing.computeIfAbsent(key, k -> CompletableFuture.runAsync(() -> {
+            try {
+                fetchAndPersist(normalized, rawQuery, types);
+            } catch (RuntimeException e) {
+                log.warn("Background refresh of search '{}' {} failed, cached results stay in use: {}", rawQuery, types, e.getMessage());
+            } finally {
+                refreshing.remove(k);
+            }
+        }, refreshExecutor));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> List<T> take(Map<SearchType, List<?>> served, SearchType type, int limit) {
+        List<T> list = (List<T>) served.getOrDefault(type, List.of());
+        return list.size() > limit ? List.copyOf(list.subList(0, limit)) : list;
+    }
+
+    private static String normalizeQuery(String query) {
+        return query.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
+    }
+
+    private static String memoryKey(String normalized, SearchType type) {
+        return type.name() + ":" + normalized;
+    }
+
+    private boolean isExpired(Instant at, java.time.Duration ttl) {
+        return at.plus(ttl).isBefore(clock.instant());
+    }
+
+    /** Hydrated results for one (query, type), plus when the provider was last asked. */
+    private record Hydrated(List<?> items, Instant fetchedAt) {
     }
 
     private <T, R> CompletableFuture<List<R>> upsertAll(List<T> items, Function<T, R> upsert) {

@@ -16,7 +16,13 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -44,6 +50,41 @@ public class AlbumRepository {
 
     public Optional<Album> findByProviderRef(ProviderReference ref) {
         return findIdByProviderRef(ref).flatMap(this::findById);
+    }
+
+    /** Input order preserved; ids with no row are skipped. Four round trips regardless of list size. */
+    public List<Album> findByIds(Collection<UUID> ids) {
+        Map<UUID, Album> byId = findByIdsMap(ids);
+        return ids.stream().map(byId::get).filter(Objects::nonNull).toList();
+    }
+
+    Map<UUID, Album> findByIdsMap(Collection<UUID> ids) {
+        if (ids.isEmpty()) return Map.of();
+        List<UUID> distinct = List.copyOf(new LinkedHashSet<>(ids));
+        List<AlbumRow> rows = jdbc.sql("SELECT * FROM catalog.albums WHERE id IN (:ids)")
+                .param("ids", distinct)
+                .query(AlbumRepository::mapRow)
+                .list();
+        Map<UUID, Artist> artistsById = artists.findByIdsMap(
+                rows.stream().map(AlbumRow::artistId).filter(Objects::nonNull).toList());
+        Map<UUID, List<ProviderReference>> refs = findRefsByIds(distinct);
+        Map<UUID, Album> result = new HashMap<>();
+        for (AlbumRow row : rows) {
+            Artist artist = row.artistId() == null ? null : artistsById.get(row.artistId());
+            result.put(row.id(), toAlbum(row, artist, refs.getOrDefault(row.id(), List.of())));
+        }
+        return result;
+    }
+
+    private Map<UUID, List<ProviderReference>> findRefsByIds(List<UUID> ids) {
+        Map<UUID, List<ProviderReference>> result = new HashMap<>();
+        jdbc.sql("SELECT album_id, provider, provider_resource_id FROM catalog.album_provider_refs WHERE album_id IN (:ids)")
+                .param("ids", ids)
+                .query((rs, rowNum) -> Map.entry((UUID) rs.getObject("album_id"),
+                        new ProviderReference(Provider.valueOf(rs.getString("provider")), rs.getString("provider_resource_id"))))
+                .list()
+                .forEach(e -> result.computeIfAbsent(e.getKey(), k -> new ArrayList<>()).add(e.getValue()));
+        return result;
     }
 
     /**

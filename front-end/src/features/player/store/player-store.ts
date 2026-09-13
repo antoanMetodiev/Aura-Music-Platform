@@ -9,6 +9,12 @@ interface PlayerState {
   isPlaying: boolean;
   /** Playback position in ms. Updated by the playback adapter, never persisted per-second. */
   positionMs: number;
+  /**
+   * Bumped only by `seek()`, never by `_tick()` — the only way the playback adapter can tell "the
+   * user moved the slider" apart from "this is just us reporting real progress" when both actions
+   * write the same `positionMs` field.
+   */
+  seekVersion: number;
   volume: number; // 0..1
   muted: boolean;
   shuffle: boolean;
@@ -35,6 +41,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   queue: [],
   isPlaying: false,
   positionMs: 0,
+  seekVersion: 0,
   volume: 0.8,
   muted: false,
   shuffle: false,
@@ -68,7 +75,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     else set({ positionMs: 0 });
   },
 
-  seek: (positionMs) => set({ positionMs }),
+  seek: (positionMs) => set((s) => ({ positionMs, seekVersion: s.seekVersion + 1 })),
   setVolume: (volume) => set({ volume: Math.min(1, Math.max(0, volume)), muted: false }),
   toggleMute: () => set((s) => ({ muted: !s.muted })),
   toggleShuffle: () => set((s) => ({ shuffle: !s.shuffle })),

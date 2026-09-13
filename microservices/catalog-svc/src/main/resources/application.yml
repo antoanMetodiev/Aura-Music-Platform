@@ -52,6 +52,10 @@ music:
 aura:
   catalog:
     metadata-ttl: 7d
+    # Repeat searches are served from our own catalog (Caffeine in front of Postgres); the provider
+    # is asked again only after search-ttl, and even then in the background (stale-while-revalidate).
+    search-ttl: 24h
+    search-memory-ttl: 10m
     default-search-limit: 10
     max-search-limit: 20
 

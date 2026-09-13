@@ -62,9 +62,19 @@ export interface SearchResponseDto {
   artists: ArtistSummaryDto[];
 }
 
-/** Uniform error body every catalog-svc 4xx/5xx returns (Project-Info.md §49). */
+/** Uniform error body every backend service's 4xx/5xx returns (Project-Info.md §49). */
 export interface ApiErrorBody {
   code: string;
   message: string;
   traceId: string | null;
+}
+
+/** Mirrors `playback-svc`'s `PlaybackSourceResponse` — a resolved YouTube video id, never a direct audio URL. */
+export interface PlaybackSourceDto {
+  trackId: string;
+  provider: string;
+  providerResourceId: string;
+  title: string;
+  channelTitle: string;
+  durationMs: number;
 }

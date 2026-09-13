@@ -2,10 +2,13 @@ package com.aura.catalog.adapter.persistence;
 
 import com.aura.catalog.adapter.persistence.repository.AlbumRepository;
 import com.aura.catalog.adapter.persistence.repository.ArtistRepository;
+import com.aura.catalog.adapter.persistence.repository.SearchResultRepository;
 import com.aura.catalog.adapter.persistence.repository.TrackRepository;
 import com.aura.catalog.domain.model.Album;
 import com.aura.catalog.domain.model.Artist;
+import com.aura.catalog.domain.model.CachedSearch;
 import com.aura.catalog.domain.model.ProviderReference;
+import com.aura.catalog.domain.model.SearchType;
 import com.aura.catalog.domain.model.Track;
 import com.aura.catalog.domain.port.CatalogStore;
 import com.aura.catalog.domain.port.ProviderAlbum;
@@ -13,6 +16,7 @@ import com.aura.catalog.domain.port.ProviderArtist;
 import com.aura.catalog.domain.port.ProviderTrack;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,11 +32,14 @@ public class JdbcCatalogStore implements CatalogStore {
     private final TrackRepository tracks;
     private final AlbumRepository albums;
     private final ArtistRepository artists;
+    private final SearchResultRepository searchResults;
 
-    public JdbcCatalogStore(TrackRepository tracks, AlbumRepository albums, ArtistRepository artists) {
+    public JdbcCatalogStore(TrackRepository tracks, AlbumRepository albums, ArtistRepository artists,
+                            SearchResultRepository searchResults) {
         this.tracks = tracks;
         this.albums = albums;
         this.artists = artists;
+        this.searchResults = searchResults;
     }
 
     @Override
@@ -83,5 +90,30 @@ public class JdbcCatalogStore implements CatalogStore {
     @Override
     public Artist upsertArtist(ProviderArtist artist) {
         return artists.upsert(artist);
+    }
+
+    @Override
+    public List<Track> findTracksByIds(Collection<UUID> ids) {
+        return tracks.findByIds(ids);
+    }
+
+    @Override
+    public List<Album> findAlbumsByIds(Collection<UUID> ids) {
+        return albums.findByIds(ids);
+    }
+
+    @Override
+    public List<Artist> findArtistsByIds(Collection<UUID> ids) {
+        return artists.findByIds(ids);
+    }
+
+    @Override
+    public Optional<CachedSearch> findCachedSearch(String normalizedQuery, SearchType type) {
+        return searchResults.find(normalizedQuery, type);
+    }
+
+    @Override
+    public void saveCachedSearch(String normalizedQuery, SearchType type, List<UUID> entityIds) {
+        searchResults.save(normalizedQuery, type, entityIds);
     }
 }
