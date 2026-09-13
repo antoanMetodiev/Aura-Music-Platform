@@ -1,0 +1,161 @@
+{
+  "app": {
+    "name": "Aura",
+    "tagline": "Музиката е центърът на социалния граф."
+  },
+  "common": {
+    "showAll": "Виж всички",
+    "scrollLeft": "Превърти наляво",
+    "scrollRight": "Превърти надясно",
+    "play": "Пусни",
+    "pause": "Пауза",
+    "playItem": "Пусни {title}",
+    "like": "Харесай",
+    "share": "Сподели",
+    "explicit": "Експлицитно съдържание",
+    "backToHome": "Обратно към Начало",
+    "comingSoon": "Тази страница е следваща по плана. Виж FRONTEND.md §8 за реда."
+  },
+  "nav": {
+    "home": "Начало",
+    "search": "Търсене",
+    "library": "Библиотека",
+    "likedSongs": "Харесани песни",
+    "recentlyPlayed": "Скоро слушани",
+    "friends": "Приятели",
+    "notifications": "Известия",
+    "profile": "Профил",
+    "settings": "Настройки",
+    "logOut": "Изход",
+    "playlists": "Плейлисти",
+    "createPlaylist": "Нов плейлист",
+    "collapseSidebar": "Свий страничната лента",
+    "expandSidebar": "Разгъни страничната лента",
+    "collapse": "Свий",
+    "expand": "Разгъни",
+    "playlistMeta": "Плейлист · {owner} · {count}",
+    "goBack": "Назад",
+    "goForward": "Напред",
+    "accountMenu": "Меню на акаунта",
+    "notificationsUnread": "Известия, {count} непрочетени",
+    "language": "Език",
+    "primary": "Основна навигация",
+    "personal": "Лични",
+    "mobile": "Мобилна навигация"
+  },
+  "languages": {
+    "en": "English",
+    "bg": "Български"
+  },
+  "search": {
+    "placeholder": "Търси песни, изпълнители, албуми, приятели…",
+    "label": "Търсене",
+    "clear": "Изчисти търсенето"
+  },
+  "panel": {
+    "label": "Страничен панел",
+    "nowPlaying": "Сега слушаш",
+    "queue": "Опашка",
+    "friends": "Приятели",
+    "close": "Затвори панела",
+    "listeningNow": "Слушат в момента",
+    "activity": "Активност",
+    "noOneListening": "В момента никой не слуша.",
+    "nothingPlaying": "Нищо не свири",
+    "nothingPlayingHint": "Избери песен от Начало или Търсене.",
+    "queueEmpty": "Опашката е празна",
+    "queueEmptyHint": "Добави песни с „Добави в опашката“.",
+    "upNext": "Следва",
+    "nextUp": "След това",
+    "nothingQueued": "Няма нищо след тази песен.",
+    "album": "Албум",
+    "source": "Източник",
+    "sourceVerified": "YouTube · потвърдено съвпадение",
+    "activityLiked": "<name></name> хареса <track></track>",
+    "activityPlaylistCreated": "<name></name> създаде плейлист <playlist></playlist>",
+    "activityFriendAccepted": "<name></name> вече е твой приятел"
+  },
+  "presence": {
+    "listening": "Слуша сега",
+    "online": "Онлайн",
+    "offline": "Офлайн"
+  },
+  "player": {
+    "shuffleOn": "Включи разбъркване",
+    "shuffleOff": "Изключи разбъркване",
+    "previous": "Предишна",
+    "next": "Следваща",
+    "play": "Пусни",
+    "pause": "Пауза",
+    "repeatOn": "Включи повторение",
+    "repeatOne": "Повтори една",
+    "repeatOff": "Изключи повторение",
+    "mute": "Заглуши",
+    "unmute": "Пусни звука",
+    "seek": "Превъртане",
+    "volume": "Сила на звука",
+    "lyrics": "Текст",
+    "queue": "Опашка",
+    "friends": "Приятели",
+    "nowPlaying": "Сега слушаш",
+    "saveToLiked": "Запази в Харесани песни",
+    "nothingPlaying": "Нищо не свири"
+  },
+  "home": {
+    "title": "Начало",
+    "greeting": {
+      "morning": "Добро утро",
+      "afternoon": "Добър ден",
+      "evening": "Добър вечер",
+      "night": "Лека нощ",
+      "fallback": "Добре дошъл отново"
+    },
+    "friendsListeningCount": "{count, plural, =1 {# приятел слуша} other {# приятели слушат}} в момента.",
+    "friendsQuiet": "Приятелите ти са тихи в момента. Пусни нещо.",
+    "sections": {
+      "friendsListening": "Приятелите ти слушат",
+      "liveRightNow": "На живо сега",
+      "recentlyPlayed": "Скоро слушани",
+      "madeFor": "Създадено за {name}",
+      "updatedToday": "Обновено днес",
+      "trending": "Популярно сред приятелите",
+      "thisWeek": "Тази седмица",
+      "newReleases": "Нови издания",
+      "fromArtistsYouFollow": "От изпълнители, които следваш",
+      "becauseYouListened": "Защото слуша {artist}",
+      "artists": "Изпълнители",
+      "recommendedPlaylists": "Препоръчани плейлисти",
+      "basedOnRecent": "На база скорошното ти слушане"
+    },
+    "cards": {
+      "song": "Песен · {artists}",
+      "playlist": "Плейлист · {owner}",
+      "album": "Албум · {artist}",
+      "artist": "Изпълнител"
+    }
+  },
+  "time": {
+    "justNow": "току-що",
+    "minutes": "{n}м",
+    "hours": "{n}ч",
+    "days": "{n}д",
+    "weeks": "{n}с"
+  },
+  "pages": {
+    "search": "Търсене",
+    "searchResults": "Резултати от търсенето",
+    "library": "Библиотека",
+    "liked": "Харесани песни",
+    "recentlyPlayed": "Скоро слушани",
+    "friends": "Приятели",
+    "friendRequests": "Покани за приятелство",
+    "notifications": "Известия",
+    "settings": "Настройки",
+    "queue": "Опашка",
+    "artist": "Изпълнител",
+    "album": "Албум",
+    "track": "Песен",
+    "playlist": "Плейлист",
+    "profile": "Профил"
+  }
+}

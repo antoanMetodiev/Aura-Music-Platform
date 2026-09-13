@@ -1,0 +1,172 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+
+  /* Aura-only surface & accent tokens */
+  --color-panel: var(--panel);
+  --color-elevated: var(--elevated);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-muted: var(--primary-muted);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-border-strong: var(--border-strong);
+  --color-success: var(--success);
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/*
+ * AURA design tokens — see FRONTEND.md §2.
+ * The app is dark-only by design: deep navy → black, white text, cool gray secondary,
+ * deep blue accent. `:root` and `.dark` are intentionally identical.
+ */
+:root,
+.dark {
+  /* surfaces */
+  --background: #070a12; /* page ground: near-black navy */
+  --foreground: #f5f7fa;
+  --panel: #0d1220; /* sidebar / main / right panel */
+  --elevated: #141b2e; /* cards, popovers, hover rows */
+  --hover: #1b2439;
+  --active: #22304d;
+
+  --card: var(--elevated);
+  --card-foreground: var(--foreground);
+  --popover: var(--elevated);
+  --popover-foreground: var(--foreground);
+
+  /* brand accent: deep blue */
+  --primary: #2f6bff;
+  --primary-foreground: #ffffff;
+  --primary-hover: #4c82ff;
+  --primary-muted: #1e3f8f;
+
+  --secondary: var(--elevated);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--elevated);
+  --muted-foreground: #9aa6bf; /* cool gray */
+  --subtle-foreground: #5f6b85;
+  --accent: var(--hover);
+  --accent-foreground: var(--foreground);
+  --destructive: #e5484d;
+  --success: #3dd68c;
+
+  --border: #1c2438;
+  --border-strong: #2a3550;
+  --input: #1c2438;
+  --ring: #2f6bff;
+
+  --chart-1: #2f6bff;
+  --chart-2: #4c82ff;
+  --chart-3: #1e3f8f;
+  --chart-4: #9aa6bf;
+  --chart-5: #5f6b85;
+
+  --radius: 0.625rem;
+
+  --sidebar: var(--panel);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--hover);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  /* hero / highlight gradient: deep navy → dark rich blue → black */
+  --gradient-hero: linear-gradient(180deg, #0b2a5b 0%, #0a1a3c 45%, #070a12 100%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  html {
+    @apply font-sans;
+    color-scheme: dark;
+  }
+}
+
+@utility bg-gradient-hero {
+  background-image: var(--gradient-hero);
+}
+
+/* "now playing" equalizer bars */
+@keyframes eq {
+  0%,
+  100% {
+    height: 25%;
+  }
+  50% {
+    height: 100%;
+  }
+}
+@utility animate-eq {
+  animation: eq 0.9s ease-in-out infinite;
+}
+
+/* Thin, unobtrusive scrollbars inside panels */
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* Horizontal card rails: hide the scrollbar entirely, arrows + swipe do the job */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

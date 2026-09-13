@@ -1,0 +1,161 @@
+{
+  "app": {
+    "name": "Aura",
+    "tagline": "Music is the center of the social graph."
+  },
+  "common": {
+    "showAll": "Show all",
+    "scrollLeft": "Scroll left",
+    "scrollRight": "Scroll right",
+    "play": "Play",
+    "pause": "Pause",
+    "playItem": "Play {title}",
+    "like": "Like",
+    "share": "Share",
+    "explicit": "Explicit",
+    "backToHome": "Back to Home",
+    "comingSoon": "This page is next on the roadmap. See FRONTEND.md §8 for the order."
+  },
+  "nav": {
+    "home": "Home",
+    "search": "Search",
+    "library": "Library",
+    "likedSongs": "Liked Songs",
+    "recentlyPlayed": "Recently Played",
+    "friends": "Friends",
+    "notifications": "Notifications",
+    "profile": "Profile",
+    "settings": "Settings",
+    "logOut": "Log out",
+    "playlists": "Playlists",
+    "createPlaylist": "Create playlist",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "playlistMeta": "Playlist · {owner} · {count}",
+    "goBack": "Go back",
+    "goForward": "Go forward",
+    "accountMenu": "Account menu",
+    "notificationsUnread": "Notifications, {count} unread",
+    "language": "Language",
+    "primary": "Primary",
+    "personal": "Personal",
+    "mobile": "Mobile"
+  },
+  "languages": {
+    "en": "English",
+    "bg": "Български"
+  },
+  "search": {
+    "placeholder": "Search tracks, artists, albums, friends…",
+    "label": "Search",
+    "clear": "Clear search"
+  },
+  "panel": {
+    "label": "Side panel",
+    "nowPlaying": "Now Playing",
+    "queue": "Queue",
+    "friends": "Friends",
+    "close": "Close panel",
+    "listeningNow": "Listening now",
+    "activity": "Activity",
+    "noOneListening": "No one is listening right now.",
+    "nothingPlaying": "Nothing playing",
+    "nothingPlayingHint": "Pick a track from Home or Search to start.",
+    "queueEmpty": "Your queue is empty",
+    "queueEmptyHint": "Add tracks with “Add to queue”.",
+    "upNext": "Up next",
+    "nextUp": "Next up",
+    "nothingQueued": "Nothing queued after this.",
+    "album": "Album",
+    "source": "Source",
+    "sourceVerified": "YouTube · verified match",
+    "activityLiked": "<name></name> liked <track></track>",
+    "activityPlaylistCreated": "<name></name> created playlist <playlist></playlist>",
+    "activityFriendAccepted": "<name></name> is now your friend"
+  },
+  "presence": {
+    "listening": "Listening now",
+    "online": "Online",
+    "offline": "Offline"
+  },
+  "player": {
+    "shuffleOn": "Enable shuffle",
+    "shuffleOff": "Disable shuffle",
+    "previous": "Previous",
+    "next": "Next",
+    "play": "Play",
+    "pause": "Pause",
+    "repeatOn": "Enable repeat",
+    "repeatOne": "Repeat one",
+    "repeatOff": "Disable repeat",
+    "mute": "Mute",
+    "unmute": "Unmute",
+    "seek": "Seek",
+    "volume": "Volume",
+    "lyrics": "Lyrics",
+    "queue": "Queue",
+    "friends": "Friends",
+    "nowPlaying": "Now Playing",
+    "saveToLiked": "Save to Liked Songs",
+    "nothingPlaying": "Nothing playing"
+  },
+  "home": {
+    "title": "Home",
+    "greeting": {
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening",
+      "night": "Good night",
+      "fallback": "Welcome back"
+    },
+    "friendsListeningCount": "{count, plural, =1 {# friend is} other {# friends are}} listening right now.",
+    "friendsQuiet": "Your friends are quiet right now. Put something on.",
+    "sections": {
+      "friendsListening": "Friends are listening",
+      "liveRightNow": "Live right now",
+      "recentlyPlayed": "Recently played",
+      "madeFor": "Made for {name}",
+      "updatedToday": "Updated today",
+      "trending": "Trending among friends",
+      "thisWeek": "This week",
+      "newReleases": "New releases",
+      "fromArtistsYouFollow": "From artists you follow",
+      "becauseYouListened": "Because you listened to {artist}",
+      "artists": "Artists",
+      "recommendedPlaylists": "Recommended playlists",
+      "basedOnRecent": "Based on your recent listening"
+    },
+    "cards": {
+      "song": "Song · {artists}",
+      "playlist": "Playlist · {owner}",
+      "album": "Album · {artist}",
+      "artist": "Artist"
+    }
+  },
+  "time": {
+    "justNow": "just now",
+    "minutes": "{n}m",
+    "hours": "{n}h",
+    "days": "{n}d",
+    "weeks": "{n}w"
+  },
+  "pages": {
+    "search": "Search",
+    "searchResults": "Search results",
+    "library": "Library",
+    "liked": "Liked Songs",
+    "recentlyPlayed": "Recently Played",
+    "friends": "Friends",
+    "friendRequests": "Friend Requests",
+    "notifications": "Notifications",
+    "settings": "Settings",
+    "queue": "Queue",
+    "artist": "Artist",
+    "album": "Album",
+    "track": "Track",
+    "playlist": "Playlist",
+    "profile": "Profile"
+  }
+}
