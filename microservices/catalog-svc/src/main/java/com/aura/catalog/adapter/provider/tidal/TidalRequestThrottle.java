@@ -6,25 +6,32 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Process-wide pacing of TIDAL calls: evenly spaced starts, at most {@code maxConcurrentRequests}
  * in flight, and a full stop for the {@code Retry-After} period whenever TIDAL says 429. Callers
  * block (virtual threads, so cheaply) until their slot comes up.
  *
+ * <p>Two classes of caller. <em>Interactive</em> calls (a user's search, an album page) always go
+ * first: a <em>background</em> call (the discography worker, see {@link TidalCallPriority}) only
+ * takes a slot while no interactive call is waiting, so however hard the worker is hammering, a
+ * search still gets the next slot.
+ *
  * <p>TIDAL doesn't publish its limit or send rate-limit headers, so the spacing is adaptive
  * (AIMD): every 429 doubles it, every success shrinks it a little back toward the configured
- * {@code maxRequestsPerSecond}. The wire sees a steady stream that settles just under whatever the
- * real limit is.
+ * {@code maxRequestsPerSecond}.
  */
 @Component
 public class TidalRequestThrottle {
 
     private static final Logger log = LoggerFactory.getLogger(TidalRequestThrottle.class);
     private static final long MAX_SPACING_NANOS = Duration.ofSeconds(5).toNanos();
+    private static final long BACKGROUND_YIELD_MS = 25;
 
     private final long baseSpacingNanos;
     private final Semaphore inFlight;
+    private final AtomicInteger interactiveWaiting = new AtomicInteger();
     private long spacingNanos;
     private long nextSlotNanos = System.nanoTime();
     private volatile long pausedUntilNanos = System.nanoTime();
@@ -37,20 +44,29 @@ public class TidalRequestThrottle {
 
     /** Blocks until this call may go out. Every acquire must be paired with {@link #release()}. */
     public void acquire() throws InterruptedException {
-        inFlight.acquire();
+        boolean background = TidalCallPriority.isBackground();
+        if (!background) interactiveWaiting.incrementAndGet();
         try {
-            long waitNanos;
-            synchronized (this) {
-                long now = System.nanoTime();
-                long earliest = Math.max(nextSlotNanos, pausedUntilNanos);
-                long slot = Math.max(earliest, now);
-                nextSlotNanos = slot + spacingNanos;
-                waitNanos = slot - now;
+            if (background) yieldToInteractive();
+            // Yield only *before* taking a permit — holding one while waiting would starve the very
+            // interactive call we are yielding to.
+            inFlight.acquire();
+            try {
+                long waitNanos;
+                synchronized (this) {
+                    long now = System.nanoTime();
+                    long earliest = Math.max(nextSlotNanos, pausedUntilNanos);
+                    long slot = Math.max(earliest, now);
+                    nextSlotNanos = slot + spacingNanos;
+                    waitNanos = slot - now;
+                }
+                if (waitNanos > 0) Thread.sleep(Duration.ofNanos(waitNanos));
+            } catch (InterruptedException | RuntimeException e) {
+                inFlight.release();
+                throw e;
             }
-            if (waitNanos > 0) Thread.sleep(Duration.ofNanos(waitNanos));
-        } catch (InterruptedException | RuntimeException e) {
-            inFlight.release();
-            throw e;
+        } finally {
+            if (!background) interactiveWaiting.decrementAndGet();
         }
     }
 
@@ -73,5 +89,16 @@ public class TidalRequestThrottle {
 
     public double currentRequestsPerSecond() {
         return 1_000_000_000.0 / spacingNanos;
+    }
+
+    public int interactiveWaiting() {
+        return interactiveWaiting.get();
+    }
+
+    /** Background work steps aside for as long as any interactive call is queued. */
+    private void yieldToInteractive() throws InterruptedException {
+        while (interactiveWaiting.get() > 0) {
+            Thread.sleep(BACKGROUND_YIELD_MS);
+        }
     }
 }

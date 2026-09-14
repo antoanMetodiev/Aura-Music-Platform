@@ -30,7 +30,8 @@ public class CatalogWebMapper {
                 track.album() == null ? null : toSummary(track.album()),
                 toResponse(track.artwork()),
                 track.volumeNumber(),
-                track.trackNumber()
+                track.trackNumber(),
+                track.createdAt()
         );
     }
 

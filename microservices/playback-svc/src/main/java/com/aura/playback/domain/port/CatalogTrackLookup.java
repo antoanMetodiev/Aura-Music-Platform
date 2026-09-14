@@ -2,6 +2,7 @@ package com.aura.playback.domain.port;
 
 import com.aura.playback.domain.model.CanonicalTrack;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -12,4 +13,10 @@ import java.util.UUID;
 public interface CatalogTrackLookup {
 
     Optional<CanonicalTrack> findTrack(UUID trackId);
+
+    /** A page of the whole catalog in insertion order, strictly after the cursor (see {@code ScannedTrack}). */
+    List<ScannedTrack> scan(java.time.Instant createdAfter, UUID afterId, int limit);
+
+    record ScannedTrack(CanonicalTrack track, java.time.Instant createdAt) {
+    }
 }

@@ -60,6 +60,12 @@ public class YouTubeVideoSearchProvider implements VideoSearchProvider {
                 .toList();
     }
 
+    /** {@code videos.list} for one id — 1 quota unit, versus 100 for a search. */
+    @Override
+    public java.util.Optional<VideoCandidate> findById(String providerResourceId) {
+        return client.videosByIds(List.of(providerResourceId)).items().stream().findFirst().map(this::toCandidate);
+    }
+
     private VideoCandidate toCandidate(YouTubeVideosResponse.Item item) {
         long durationMs = parseDurationMs(item.contentDetails() == null ? null : item.contentDetails().duration());
         boolean embeddable = item.status() != null && item.status().embeddable();

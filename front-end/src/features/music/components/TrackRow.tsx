@@ -16,10 +16,13 @@ interface TrackRowProps {
   track: Track;
   /** Full tracklist this row belongs to — becomes the queue when this row starts playing. */
   context: Track[];
+  /** "md" = slightly larger artwork and type, for short lists sat next to a tall card. */
+  size?: "sm" | "md";
+  className?: string;
 }
 
 /** Compact track row for lists without a table header (search results; album/playlist pages later). */
-export function TrackRow({ index, track, context }: TrackRowProps) {
+export function TrackRow({ index, track, context, size = "sm", className }: TrackRowProps) {
   const t = useTranslations("common");
   const current = usePlayerStore((s) => s.current);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -29,8 +32,10 @@ export function TrackRow({ index, track, context }: TrackRowProps) {
   return (
     <li
       className={cn(
-        "group grid grid-cols-[1.5rem_2.5rem_1fr_auto] items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-hover",
+        "group grid items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-hover",
+        size === "md" ? "grid-cols-[1.5rem_3rem_1fr_auto]" : "grid-cols-[1.5rem_2.5rem_1fr_auto]",
         active && "bg-active/50",
+        className,
       )}
     >
       <button
@@ -49,12 +54,12 @@ export function TrackRow({ index, track, context }: TrackRowProps) {
         )}
       </button>
 
-      <ArtworkImage artwork={track.artwork} alt="" seed={track.id} sizes="40px" className="size-10" />
+      <ArtworkImage artwork={track.artwork} alt="" seed={track.id} sizes={size === "md" ? "48px" : "40px"} className={size === "md" ? "size-12" : "size-10"} />
 
       <div className="min-w-0">
         <Link
           href={routes.track(track.id)}
-          className={cn("block truncate text-sm font-medium hover:underline", active && "text-primary-hover")}
+          className={cn("block truncate font-medium hover:underline", size === "md" ? "text-[15px]" : "text-sm", active && "text-primary-hover")}
         >
           {track.title}
         </Link>

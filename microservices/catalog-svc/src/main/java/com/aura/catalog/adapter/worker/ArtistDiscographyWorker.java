@@ -1,5 +1,6 @@
 package com.aura.catalog.adapter.worker;
 
+import com.aura.catalog.adapter.provider.tidal.TidalCallPriority;
 import com.aura.catalog.config.DiscographySyncProperties;
 import com.aura.catalog.domain.service.ArtistDiscographyService;
 import jakarta.annotation.PreDestroy;
@@ -58,7 +59,9 @@ public class ArtistDiscographyWorker {
         while (running.get()) {
             Duration pause;
             try {
-                var outcome = service.syncNext();
+                // Everything this thread (and the hydration tasks it spawns) does is background work:
+                // interactive TIDAL calls go first, and its failures stay out of their circuit breaker.
+                var outcome = TidalCallPriority.runAsBackground(service::syncNext);
                 if (outcome.isPresent()) completed++;
                 // Provider down / rate-limited past what the throttle absorbed: wait it out instead
                 // of burning through the queue (every artist would fail the same way).

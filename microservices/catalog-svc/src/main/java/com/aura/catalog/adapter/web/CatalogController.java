@@ -63,6 +63,24 @@ public class CatalogController {
         return mapper.toResponse(catalogService.getTrack(id));
     }
 
+    /**
+     * Keyset walk over the whole catalog in insertion order (service-to-service, for workers that
+     * need to visit every track). Returns up to {@code limit} tracks strictly after the cursor;
+     * the caller continues from the last item's {@code createdAt}/{@code id}.
+     */
+    @GetMapping("/tracks/scan")
+    public List<TrackResponse> scanTracks(
+            @RequestParam(value = "createdAfter", required = false) java.time.Instant createdAfter,
+            @RequestParam(value = "afterId", required = false) UUID afterId,
+            @RequestParam(value = "limit", required = false) Integer limit
+    ) {
+        return catalogService.scanTracks(
+                        createdAfter == null ? java.time.Instant.EPOCH : createdAfter,
+                        afterId == null ? new UUID(0L, 0L) : afterId,
+                        limit == null ? 50 : limit)
+                .stream().map(mapper::toResponse).toList();
+    }
+
     @GetMapping("/tracks/by-isrc")
     public List<TrackResponse> getTracksByIsrc(@RequestParam String isrc) {
         if (isrc == null || isrc.isBlank()) {

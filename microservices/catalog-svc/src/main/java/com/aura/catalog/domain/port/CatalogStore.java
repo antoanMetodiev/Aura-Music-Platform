@@ -31,6 +31,9 @@ public interface CatalogStore {
     /** In album play order (volume, then track number); tracks with no known position come last. */
     List<Track> findTracksByAlbumId(UUID albumId);
 
+    /** Keyset page over every track in insertion order, strictly after {@code (createdAfter, afterId)}. */
+    List<Track> findTracksCreatedAfter(java.time.Instant createdAfter, UUID afterId, int limit);
+
     void markAlbumTracksSynced(UUID albumId);
 
     Optional<Artist> findArtistById(UUID id);

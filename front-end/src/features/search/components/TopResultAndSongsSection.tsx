@@ -24,15 +24,16 @@ export function TopResultAndSongsSection({ query }: { query: string }) {
   if (tracks.length === 0) return null;
 
   const topResult: TopResult = { kind: "track", track: tracks[0]!, context: tracks };
-  const preview = tracks.slice(0, 4);
+  const preview = tracks.slice(0, 5);
 
   return (
     <div className="flex flex-col gap-2">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <TopResultCard result={topResult} />
-        <ul className="flex flex-col justify-center">
+        {/* Rows stretch to share the Top Result card's height, so the five of them line up with it. */}
+        <ul className="flex flex-col">
           {preview.map((track, index) => (
-            <TrackRow key={track.id} index={index} track={track} context={tracks} />
+            <TrackRow key={track.id} index={index} track={track} context={tracks} size="md" className="flex-1" />
           ))}
         </ul>
       </div>

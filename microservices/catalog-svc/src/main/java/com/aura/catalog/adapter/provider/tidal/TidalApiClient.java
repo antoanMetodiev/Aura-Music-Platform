@@ -48,7 +48,9 @@ public class TidalApiClient {
     private final TidalProperties properties;
     private final TidalRequestThrottle throttle;
     private final RetryTemplate retry;
+    /** Guards interactive calls only — the worker's failures must never trip it and take search down with them. */
     private final CircuitBreaker circuitBreaker;
+    private final CircuitBreaker backgroundCircuitBreaker;
 
     public TidalApiClient(RestClient.Builder builder,
                           TidalAuthClient auth,
@@ -73,6 +75,7 @@ public class TidalApiClient {
                 .includes(TransientTidalException.class)
                 .build());
         this.circuitBreaker = circuitBreakerFactory.create("tidal");
+        this.backgroundCircuitBreaker = circuitBreakerFactory.create("tidal-background");
     }
 
     // ── Endpoints ──────────────────────────────────────────────────────────────────────────
@@ -170,7 +173,8 @@ public class TidalApiClient {
 
     private Optional<JsonApiDocument> get(URI uri) {
         try {
-            return circuitBreaker.run(() -> {
+            CircuitBreaker breaker = TidalCallPriority.isBackground() ? backgroundCircuitBreaker : circuitBreaker;
+            return breaker.run(() -> {
                 try {
                     return retry.execute(() -> doGet(uri));
                 } catch (RetryException e) {

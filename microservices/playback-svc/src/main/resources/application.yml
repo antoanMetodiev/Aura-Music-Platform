@@ -37,6 +37,10 @@ music:
       enabled: ${YOUTUBE_ENABLED:true}
       api-key: ${YOUTUBE_API_KEY:}
       region-code: ${YOUTUBE_REGION_CODE:BG}
+    # Free, keyless; asks for a descriptive User-Agent with a contact and ~1 request/second.
+    musicbrainz:
+      enabled: ${MUSICBRAINZ_ENABLED:true}
+      user-agent: ${MUSICBRAINZ_USER_AGENT:Aura-Music-Platform/0.1 (dev; antoan.0418@gmail.com)}
 
 aura:
   # Talks to catalog-svc directly (service-to-service), not through the gateway.
@@ -57,6 +61,15 @@ playback:
     # A track that resolved to nothing confident is looked up again after this long — YouTube
     # uploads change, and the matcher may have improved.
     retry-unverified-after: 7d
+  # Background walk over the whole catalog: MusicBrainz (by ISRC) may already know the YouTube video,
+  # which then costs 1 quota unit to validate instead of 100 for a search. Every track is asked
+  # about exactly once, whatever the outcome.
+  video-hints:
+    enabled: ${VIDEO_HINTS_ENABLED:true}
+    page-size: 25
+    delay-between-pages: 1s
+    idle-after-full-pass: 10m
+    backoff-on-outage: 5m
 
 resilience4j:
   circuitbreaker:
@@ -68,6 +81,13 @@ resilience4j:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 30s
         permitted-number-of-calls-in-half-open-state: 5
+      musicbrainz:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 3
       catalog:
         sliding-window-type: COUNT_BASED
         sliding-window-size: 20
@@ -84,6 +104,9 @@ resilience4j:
         timeout-duration: 8s
       catalog:
         timeout-duration: 8s
+      # MusicBrainz calls wait their turn (1/s) and retry on "busy" inside the breaker — far longer than one HTTP call.
+      musicbrainz:
+        timeout-duration: 60s
 
 management:
   endpoints:

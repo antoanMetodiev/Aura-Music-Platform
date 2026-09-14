@@ -1,5 +1,6 @@
 package com.aura.catalog.adapter.web.dto;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -14,6 +15,8 @@ public record TrackResponse(
         AlbumSummaryResponse album,
         ArtworkResponse artwork,
         Integer volumeNumber,
-        Integer trackNumber
+        Integer trackNumber,
+        /** When we first stored the track — the cursor for {@code GET /tracks/scan}. */
+        Instant createdAt
 ) {
 }

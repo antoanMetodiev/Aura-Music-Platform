@@ -47,6 +47,28 @@ public class CatalogClient implements CatalogTrackLookup {
         }
     }
 
+    @Override
+    public List<CatalogTrackLookup.ScannedTrack> scan(java.time.Instant createdAfter, UUID afterId, int limit) {
+        try {
+            return circuitBreaker.run(() -> {
+                List<CatalogTrackResponse> page = restClient.get()
+                        .uri(b -> b.path("/api/v1/catalog/tracks/scan")
+                                .queryParam("createdAfter", createdAfter.toString())
+                                .queryParam("afterId", afterId.toString())
+                                .queryParam("limit", limit)
+                                .build())
+                        .retrieve()
+                        .body(new org.springframework.core.ParameterizedTypeReference<List<CatalogTrackResponse>>() {});
+                return page == null ? List.<CatalogTrackLookup.ScannedTrack>of() : page.stream()
+                        .map(r -> new CatalogTrackLookup.ScannedTrack(toCanonicalTrack(r), r.createdAt()))
+                        .toList();
+            });
+        } catch (RuntimeException e) {
+            log.warn("Unable to scan catalog-svc after {}/{}", createdAfter, afterId, e);
+            throw new CatalogServiceUnavailableException(e);
+        }
+    }
+
     private Optional<CanonicalTrack> fetch(UUID trackId) {
         try {
             CatalogTrackResponse response = restClient.get()

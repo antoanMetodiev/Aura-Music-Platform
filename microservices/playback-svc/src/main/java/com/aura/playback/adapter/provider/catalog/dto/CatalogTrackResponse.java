@@ -2,6 +2,7 @@ package com.aura.playback.adapter.provider.catalog.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -12,7 +13,8 @@ public record CatalogTrackResponse(
         String title,
         long durationMs,
         String isrc,
-        List<ArtistSummary> artists
+        List<ArtistSummary> artists,
+        Instant createdAt
 ) {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ArtistSummary(UUID id, String name) {

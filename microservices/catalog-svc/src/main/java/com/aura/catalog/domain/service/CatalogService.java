@@ -238,7 +238,8 @@ public class CatalogService {
         String key = normalized + "|" + types;
         refreshing.computeIfAbsent(key, k -> CompletableFuture.runAsync(() -> {
             try {
-                fetchAndPersist(normalized, rawQuery, types, limit);
+                // Stale-while-revalidate is background work too: interactive searches go first at TIDAL.
+                com.aura.catalog.adapter.provider.tidal.TidalCallPriority.runAsBackground(() -> fetchAndPersist(normalized, rawQuery, types, limit));
             } catch (RuntimeException e) {
                 log.warn("Background refresh of search '{}' {} failed, cached results stay in use: {}", rawQuery, types, e.getMessage());
             } finally {
@@ -285,6 +286,11 @@ public class CatalogService {
                         r -> metadata.getTrack(r.providerResourceId()).map(store::upsertTrack).orElse(local)))
                 .or(() -> metadata.getTrack(ref.providerResourceId()).map(store::upsertTrack))
                 .orElseThrow(() -> new CatalogEntityNotFoundException("Track", ref.provider() + ":" + ref.providerResourceId()));
+    }
+
+    /** Local-only walk of the catalog for background consumers; never touches the provider. */
+    public List<Track> scanTracks(Instant createdAfter, UUID afterId, int limit) {
+        return store.findTracksCreatedAfter(createdAfter, afterId, Math.min(Math.max(limit, 1), 200));
     }
 
     public List<Track> findTracksByIsrc(String isrc) {

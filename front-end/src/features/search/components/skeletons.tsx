@@ -15,7 +15,7 @@ export function TopResultAndSongsSkeleton() {
         <Skeleton className="mt-4 size-14 rounded-full" />
       </div>
       <div className="flex flex-col justify-center gap-1">
-        {Array.from({ length: 4 }).map((_, i) => (
+        {Array.from({ length: 5 }).map((_, i) => (
           <TrackRowSkeleton key={i} />
         ))}
       </div>

@@ -41,6 +41,9 @@ import java.util.StringJoiner;
 public class YouTubeApiClient {
 
     private static final Logger log = LoggerFactory.getLogger(YouTubeApiClient.class);
+    /** YouTube Data API quota cost per call (of the 10 000 units a key gets per day). */
+    public static final int SEARCH_COST_UNITS = 100;
+    public static final int VIDEOS_LIST_COST_UNITS = 1;
 
     private final RestClient restClient;
     private final YouTubeProperties properties;
@@ -74,7 +77,7 @@ public class YouTubeApiClient {
         params.put("regionCode", List.of(properties.regionCode()));
         params.put("safeSearch", List.of("none"));
         params.put("q", List.of(query));
-        return get("/search", params, YouTubeSearchResponse.class)
+        return get("/search", params, YouTubeSearchResponse.class, SEARCH_COST_UNITS)
                 .orElseGet(() -> new YouTubeSearchResponse(List.of()));
     }
 
@@ -84,21 +87,28 @@ public class YouTubeApiClient {
         Map<String, List<String>> params = new LinkedHashMap<>();
         params.put("part", List.of("snippet,contentDetails,status"));
         params.put("id", List.of(String.join(",", ids)));
-        return get("/videos", params, YouTubeVideosResponse.class)
+        return get("/videos", params, YouTubeVideosResponse.class, VIDEOS_LIST_COST_UNITS)
                 .orElseGet(() -> new YouTubeVideosResponse(List.of()));
     }
 
     // ── Plumbing ───────────────────────────────────────────────────────────────────────────
 
-    private <T> java.util.Optional<T> get(String path, Map<String, List<String>> params, Class<T> type) {
+    /**
+     * Picks a key that can still afford {@code costUnits} today, charges it up front (YouTube bills
+     * failed calls too), and makes the call. Should YouTube nonetheless report the key as out of
+     * quota — our counter can drift from theirs — the key is marked spent and the call is retried
+     * once on another key with quota; with none left, {@link QuotaExceededException} surfaces.
+     */
+    private <T> java.util.Optional<T> get(String path, Map<String, List<String>> params, Class<T> type, int costUnits) {
         URI uriForLogging = buildUri(path, params); // never log the API key
-        YouTubeApiKeySource.ApiKey key = keys.current();
+        YouTubeApiKeySource.ApiKey key = keys.pick(costUnits);
+        keys.charge(key, costUnits);
         try {
             return getWithKey(path, params, type, key, uriForLogging);
         } catch (QuotaExceededException e) {
-            // Daily quota gone on this key — one retry on the next key, if there is one.
             if (!keys.markQuotaExhausted(key)) throw e;
-            YouTubeApiKeySource.ApiKey next = keys.current();
+            YouTubeApiKeySource.ApiKey next = keys.pick(costUnits);
+            keys.charge(next, costUnits);
             try {
                 return getWithKey(path, params, type, next, uriForLogging);
             } catch (QuotaExceededException again) {
@@ -125,7 +135,6 @@ public class YouTubeApiClient {
                     throw new PlaybackProviderUnavailableException(PlaybackProvider.YOUTUBE, last);
                 }
             });
-            keys.markUsed(key);
             return result;
         } catch (PlaybackProviderUnavailableException | YouTubeApiException | QuotaExceededException e) {
             throw e;

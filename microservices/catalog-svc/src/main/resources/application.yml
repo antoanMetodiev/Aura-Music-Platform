@@ -79,6 +79,14 @@ resilience4j:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 30s
         permitted-number-of-calls-in-half-open-state: 5
+      # The discography worker's own breaker: it may open all it likes without affecting search.
+      tidal-background:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 50
+        minimum-number-of-calls: 20
+        failure-rate-threshold: 80
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 5
   # Resilience4j's TimeLimiter runs each call on a pool thread and *interrupts* it on timeout. Calls
   # now deliberately wait in TidalRequestThrottle (spacing, Retry-After pauses), so this has to be
   # far above the HTTP timeouts (spring.http.client.*), which are the real per-request guard.
@@ -86,6 +94,8 @@ resilience4j:
     instances:
       tidal:
         timeout-duration: 120s
+      tidal-background:
+        timeout-duration: 300s
 
 management:
   endpoints:

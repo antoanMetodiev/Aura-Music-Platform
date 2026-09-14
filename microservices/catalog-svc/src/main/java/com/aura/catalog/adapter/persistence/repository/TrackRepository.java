@@ -59,6 +59,26 @@ public class TrackRepository {
         return findByIds(ids);
     }
 
+    /**
+     * Keyset page over the whole catalog in insertion order — for consumers that walk every track
+     * (playback-svc's video hint worker). Strictly after {@code (after, afterId)}; ids created at the
+     * same instant are ordered by id so the walk never skips or repeats.
+     */
+    public List<Track> findCreatedAfter(Instant after, UUID afterId, int limit) {
+        List<UUID> ids = jdbc.sql("""
+                        SELECT id FROM catalog.tracks
+                        WHERE (created_at, id) > (:after, :afterId)
+                        ORDER BY created_at, id
+                        LIMIT :limit
+                        """)
+                .param("after", after.atOffset(java.time.ZoneOffset.UTC))
+                .param("afterId", afterId)
+                .param("limit", limit)
+                .query(UUID.class)
+                .list();
+        return findByIds(ids);
+    }
+
     public List<Track> findByAlbumId(UUID albumId) {
         List<UUID> ids = jdbc.sql("""
                         SELECT id FROM catalog.tracks WHERE album_id = :albumId

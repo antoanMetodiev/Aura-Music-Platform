@@ -55,7 +55,7 @@ public class TidalCredentialsSource {
     public synchronized void penalize(Credentials failed, String reason) {
         if (failed.fromDatabase()) {
             jdbc.sql("UPDATE catalog.tidal_api_keys SET disabled_until = :until WHERE id = :id")
-                    .param("until", clock.instant().plus(PENALTY))
+                    .param("until", clock.instant().plus(PENALTY).atOffset(java.time.ZoneOffset.UTC))
                     .param("id", failed.id())
                     .update();
             loadedAt = Instant.EPOCH;

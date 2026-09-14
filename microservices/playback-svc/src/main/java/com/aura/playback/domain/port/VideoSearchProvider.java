@@ -16,4 +16,7 @@ public interface VideoSearchProvider {
     PlaybackProvider provider();
 
     List<VideoCandidate> search(CanonicalTrack track);
+
+    /** One specific video by provider id, hydrated the same way search results are (duration, embeddability). Empty if gone. */
+    java.util.Optional<VideoCandidate> findById(String providerResourceId);
 }
