@@ -41,7 +41,9 @@
     "language": "Language",
     "primary": "Primary",
     "personal": "Personal",
-    "mobile": "Mobile"
+    "mobile": "Mobile",
+    "resize": "Resize sidebar",
+    "resizeHint": "Drag to resize · double-click to reset"
   },
   "languages": {
     "en": "English",
@@ -67,6 +69,8 @@
       "title": "Search is unavailable",
       "description": "We could not reach the music catalog. Make sure the backend is running."
     },
+    "refining": "Showing what we already have — checking for more…",
+    "localOnly": "Showing results from your catalog only — the music provider is unavailable right now.",
     "genres": {
       "pop": "Pop",
       "hipHop": "Hip-Hop",
@@ -99,7 +103,9 @@
     "sourceVerified": "YouTube · verified match",
     "activityLiked": "<name></name> liked <track></track>",
     "activityPlaylistCreated": "<name></name> created playlist <playlist></playlist>",
-    "activityFriendAccepted": "<name></name> is now your friend"
+    "activityFriendAccepted": "<name></name> is now your friend",
+    "resize": "Resize panel",
+    "resizeHint": "Drag to resize · double-click to reset"
   },
   "presence": {
     "listening": "Listening now",
@@ -166,6 +172,21 @@
     "hours": "{n}h",
     "days": "{n}d",
     "weeks": "{n}w"
+  },
+  "album": {
+    "types": {
+      "ALBUM": "Album",
+      "EP": "EP",
+      "SINGLE": "Single",
+      "UNKNOWN": "Album"
+    },
+    "songs": "{count, plural, one {# song} other {# songs}}",
+    "disc": "Disc {number}",
+    "noTracks": "No tracks are available for this album yet.",
+    "tracksUnavailable": {
+      "title": "Couldn't load the tracklist",
+      "description": "We could not reach the music catalog. Try again in a moment."
+    }
   },
   "pages": {
     "search": "Search",

@@ -1,35 +1,78 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 export type RightPanelTab = "now-playing" | "queue" | "friends";
 
+/** Resizable side panel bounds (px). Dragging below `collapseBelow` snaps the panel shut instead. */
+export const SIDEBAR_SIZE = { min: 200, max: 440, default: 256, collapseBelow: 150 } as const;
+export const RIGHT_PANEL_SIZE = { min: 280, max: 520, default: 320, collapseBelow: 200 } as const;
+
 interface UiState {
   sidebarCollapsed: boolean;
+  sidebarWidth: number;
   rightPanelOpen: boolean;
+  rightPanelWidth: number;
   rightPanelTab: RightPanelTab;
   mobilePlayerExpanded: boolean;
+  /** True while a panel edge is being dragged — panels drop their width transition so they track the pointer. */
+  resizing: boolean;
 }
 
 interface UiActions {
   toggleSidebar: () => void;
+  setSidebarWidth: (width: number) => void;
   toggleRightPanel: () => void;
+  setRightPanelWidth: (width: number) => void;
   openRightPanel: (tab: RightPanelTab) => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
   setMobilePlayerExpanded: (open: boolean) => void;
+  setResizing: (resizing: boolean) => void;
 }
 
-export const useUiStore = create<UiState & UiActions>((set, get) => ({
-  sidebarCollapsed: false,
-  rightPanelOpen: true,
-  rightPanelTab: "friends",
-  mobilePlayerExpanded: false,
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(value)));
 
-  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
-  toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
-  openRightPanel: (tab) => {
-    // Clicking the already-active tab's button toggles the panel closed.
-    if (get().rightPanelOpen && get().rightPanelTab === tab) return set({ rightPanelOpen: false });
-    set({ rightPanelOpen: true, rightPanelTab: tab });
-  },
-  setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
-  setMobilePlayerExpanded: (open) => set({ mobilePlayerExpanded: open }),
-}));
+export const useUiStore = create<UiState & UiActions>()(
+  persist(
+    (set, get) => ({
+      sidebarCollapsed: false,
+      sidebarWidth: SIDEBAR_SIZE.default,
+      rightPanelOpen: true,
+      rightPanelWidth: RIGHT_PANEL_SIZE.default,
+      rightPanelTab: "friends",
+      mobilePlayerExpanded: false,
+      resizing: false,
+
+      toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+      setSidebarWidth: (width) => {
+        if (width < SIDEBAR_SIZE.collapseBelow) return set({ sidebarCollapsed: true });
+        set({ sidebarCollapsed: false, sidebarWidth: clamp(width, SIDEBAR_SIZE.min, SIDEBAR_SIZE.max) });
+      },
+      toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
+      setRightPanelWidth: (width) => {
+        if (width < RIGHT_PANEL_SIZE.collapseBelow) return set({ rightPanelOpen: false });
+        set({ rightPanelOpen: true, rightPanelWidth: clamp(width, RIGHT_PANEL_SIZE.min, RIGHT_PANEL_SIZE.max) });
+      },
+      openRightPanel: (tab) => {
+        // Clicking the already-active tab's button toggles the panel closed.
+        if (get().rightPanelOpen && get().rightPanelTab === tab) return set({ rightPanelOpen: false });
+        set({ rightPanelOpen: true, rightPanelTab: tab });
+      },
+      setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
+      setMobilePlayerExpanded: (open) => set({ mobilePlayerExpanded: open }),
+      setResizing: (resizing) => set({ resizing }),
+    }),
+    {
+      name: "aura-ui",
+      partialize: (s) => ({
+        sidebarCollapsed: s.sidebarCollapsed,
+        sidebarWidth: s.sidebarWidth,
+        rightPanelOpen: s.rightPanelOpen,
+        rightPanelWidth: s.rightPanelWidth,
+        rightPanelTab: s.rightPanelTab,
+      }),
+      // Rehydrated after mount (see UiStateHydrator) so the server-rendered layout and the first
+      // client render agree; the persisted sizes are applied a frame later.
+      skipHydration: true,
+    },
+  ),
+);

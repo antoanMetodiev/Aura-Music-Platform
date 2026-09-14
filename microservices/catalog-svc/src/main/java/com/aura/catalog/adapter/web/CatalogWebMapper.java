@@ -28,7 +28,9 @@ public class CatalogWebMapper {
                 track.explicit(),
                 track.artists().stream().map(this::toSummary).toList(),
                 track.album() == null ? null : toSummary(track.album()),
-                toResponse(track.artwork())
+                toResponse(track.artwork()),
+                track.volumeNumber(),
+                track.trackNumber()
         );
     }
 

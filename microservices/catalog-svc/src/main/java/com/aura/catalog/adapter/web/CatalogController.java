@@ -35,16 +35,27 @@ public class CatalogController {
         this.mapper = mapper;
     }
 
+    /**
+     * {@code source=local} answers only from our own catalog (instant, never a provider call) —
+     * the frontend fires it alongside the default call and paints whichever lands first.
+     */
     @GetMapping("/search")
     public SearchResponse search(
             @RequestParam("q") String query,
             @RequestParam(value = "type", required = false) List<String> types,
-            @RequestParam(value = "limit", required = false) Integer limit
+            @RequestParam(value = "limit", required = false) Integer limit,
+            @RequestParam(value = "source", required = false) String source
     ) {
         if (query == null || query.isBlank()) {
             throw new IllegalArgumentException("'q' must not be blank");
         }
-        return mapper.toResponse(catalogService.search(query, parseTypes(types), limit));
+        if (source != null && !source.equals("local") && !source.equals("all")) {
+            throw new IllegalArgumentException("Unknown source '" + source + "', expected 'local' or 'all'");
+        }
+        Set<SearchType> parsedTypes = parseTypes(types);
+        return mapper.toResponse("local".equals(source)
+                ? catalogService.searchLocally(query, parsedTypes, limit)
+                : catalogService.search(query, parsedTypes, limit));
     }
 
     @GetMapping("/tracks/{id}")
@@ -63,6 +74,11 @@ public class CatalogController {
     @GetMapping("/albums/{id}")
     public AlbumResponse getAlbum(@PathVariable UUID id) {
         return mapper.toFullResponse(catalogService.getAlbum(id));
+    }
+
+    @GetMapping("/albums/{id}/tracks")
+    public List<TrackResponse> getAlbumTracks(@PathVariable UUID id) {
+        return catalogService.getAlbumTracks(id).stream().map(mapper::toResponse).toList();
     }
 
     @GetMapping("/artists/{id}")

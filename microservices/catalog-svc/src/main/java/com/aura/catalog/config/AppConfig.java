@@ -35,31 +35,9 @@ public class AppConfig {
         return Executors.newVirtualThreadPerTaskExecutor();
     }
 
-    /**
-     * Runs independent Postgres upserts (search persists every track/album/artist it saw —
-     * Project-Info.md §14) concurrently too, but — unlike TIDAL calls — each one holds a Hikari
-     * connection for its duration, and the pool only has so many
-     * ({@code spring.datasource.hikari.maximum-pool-size}). Firing them all as virtual threads at
-     * once made every task race for the same handful of connections: the losers queued for up to
-     * Hikari's 30s {@code connectionTimeout} and a single search could look "hung." A small fixed
-     * pool, sized comfortably under the connection pool, caps how many upserts truly run at once —
-     * the rest wait in this executor's own (cheap, in-memory) queue instead of at the DB.
-     */
-    @Bean(destroyMethod = "shutdown")
-    @DbWrite
-    public ExecutorService dbWriteExecutor() {
-        return Executors.newFixedThreadPool(6);
-    }
-
     @Qualifier
     @Retention(RetentionPolicy.RUNTIME)
     @Target({ElementType.FIELD, ElementType.PARAMETER, ElementType.METHOD})
     public @interface HttpIo {
-    }
-
-    @Qualifier
-    @Retention(RetentionPolicy.RUNTIME)
-    @Target({ElementType.FIELD, ElementType.PARAMETER, ElementType.METHOD})
-    public @interface DbWrite {
     }
 }

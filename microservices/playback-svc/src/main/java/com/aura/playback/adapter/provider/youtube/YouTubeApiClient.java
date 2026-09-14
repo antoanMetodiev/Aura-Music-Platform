@@ -44,12 +44,15 @@ public class YouTubeApiClient {
 
     private final RestClient restClient;
     private final YouTubeProperties properties;
+    private final YouTubeApiKeySource keys;
     private final RetryTemplate retry;
     private final CircuitBreaker circuitBreaker;
 
-    public YouTubeApiClient(RestClient.Builder builder, YouTubeProperties properties, CircuitBreakerFactory<?, ?> circuitBreakerFactory) {
+    public YouTubeApiClient(RestClient.Builder builder, YouTubeProperties properties, YouTubeApiKeySource keys,
+                            CircuitBreakerFactory<?, ?> circuitBreakerFactory) {
         this.restClient = builder.clone().baseUrl(properties.apiBaseUrl()).build();
         this.properties = properties;
+        this.keys = keys;
         this.retry = new RetryTemplate(RetryPolicy.builder()
                 .maxRetries(2)
                 .delay(Duration.ofMillis(250))
@@ -88,12 +91,30 @@ public class YouTubeApiClient {
     // ── Plumbing ───────────────────────────────────────────────────────────────────────────
 
     private <T> java.util.Optional<T> get(String path, Map<String, List<String>> params, Class<T> type) {
-        Map<String, List<String>> withKey = new LinkedHashMap<>(params);
-        withKey.put("key", List.of(properties.apiKey()));
-        URI uri = buildUri(path, withKey);
         URI uriForLogging = buildUri(path, params); // never log the API key
+        YouTubeApiKeySource.ApiKey key = keys.current();
         try {
-            return circuitBreaker.run(() -> {
+            return getWithKey(path, params, type, key, uriForLogging);
+        } catch (QuotaExceededException e) {
+            // Daily quota gone on this key — one retry on the next key, if there is one.
+            if (!keys.markQuotaExhausted(key)) throw new YouTubeApiException(e.getMessage(), e.getCause());
+            YouTubeApiKeySource.ApiKey next = keys.current();
+            try {
+                return getWithKey(path, params, type, next, uriForLogging);
+            } catch (QuotaExceededException again) {
+                keys.markQuotaExhausted(next);
+                throw new YouTubeApiException(again.getMessage(), again.getCause());
+            }
+        }
+    }
+
+    private <T> java.util.Optional<T> getWithKey(String path, Map<String, List<String>> params, Class<T> type,
+                                                 YouTubeApiKeySource.ApiKey key, URI uriForLogging) {
+        Map<String, List<String>> withKey = new LinkedHashMap<>(params);
+        withKey.put("key", List.of(key.value()));
+        URI uri = buildUri(path, withKey);
+        try {
+            java.util.Optional<T> result = circuitBreaker.run(() -> {
                 try {
                     return retry.execute(() -> doGet(uri, uriForLogging, type));
                 } catch (RetryException e) {
@@ -101,7 +122,9 @@ public class YouTubeApiClient {
                     throw new PlaybackProviderUnavailableException(PlaybackProvider.YOUTUBE, e.getLastException());
                 }
             });
-        } catch (PlaybackProviderUnavailableException | YouTubeApiException e) {
+            keys.markUsed(key);
+            return result;
+        } catch (PlaybackProviderUnavailableException | YouTubeApiException | QuotaExceededException e) {
             throw e;
         } catch (RuntimeException e) {
             log.warn("Unexpected failure calling YouTube for {}", uriForLogging, e);
@@ -116,6 +139,10 @@ public class YouTubeApiClient {
         } catch (HttpClientErrorException e) {
             HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
             if (status == HttpStatus.FORBIDDEN) {
+                String body = e.getResponseBodyAsString();
+                if (body != null && (body.contains("quotaExceeded") || body.contains("dailyLimitExceeded"))) {
+                    throw new QuotaExceededException("YouTube daily quota exhausted for " + uriForLogging.getPath(), e);
+                }
                 throw new YouTubeApiException(
                         "YouTube rejected request " + uriForLogging.getPath()
                                 + " with 403 — check API key restrictions and remaining quota", e);
@@ -144,6 +171,13 @@ public class YouTubeApiClient {
     /** Retryable: rate limits, 5xx, timeouts. */
     static class TransientYouTubeException extends RuntimeException {
         TransientYouTubeException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    /** The key's daily quota is spent — handled by rotating keys in {@link #get}, never retried on the same key. */
+    static class QuotaExceededException extends RuntimeException {
+        QuotaExceededException(String message, Throwable cause) {
             super(message, cause);
         }
     }

@@ -1,6 +1,7 @@
 package com.aura.playback.domain.service;
 
 import com.aura.playback.config.MatchingProperties;
+import com.aura.playback.config.ResolverProperties;
 import com.aura.playback.domain.model.CanonicalTrack;
 import com.aura.playback.domain.model.MatchMethod;
 import com.aura.playback.domain.model.PlaybackProvider;
@@ -38,14 +39,16 @@ public class PlaybackResolverService {
     private final VideoSearchProvider videoSearchProvider;
     private final TrackMatcher matcher;
     private final MatchingProperties thresholds;
+    private final ResolverProperties resolverProperties;
     private final Clock clock;
 
     private final ConcurrentHashMap<UUID, CompletableFuture<PlaybackSource>> pending = new ConcurrentHashMap<>();
 
     public PlaybackResolverService(PlaybackSourceStore store, CatalogTrackLookup catalogLookup,
                                     VideoSearchProvider videoSearchProvider, TrackMatcher matcher,
-                                    MatchingProperties thresholds, Clock clock) {
+                                    MatchingProperties thresholds, ResolverProperties resolverProperties, Clock clock) {
         this.store = store;
+        this.resolverProperties = resolverProperties;
         this.catalogLookup = catalogLookup;
         this.videoSearchProvider = videoSearchProvider;
         this.matcher = matcher;
@@ -60,7 +63,10 @@ public class PlaybackResolverService {
      *                                           best one is an unverified candidate awaiting manual review
      */
     public PlaybackSource resolve(UUID trackId) {
-        Optional<PlaybackSource> cached = store.findByTrackId(trackId, PlaybackProvider.YOUTUBE);
+        // A verified match is final; a candidate / nothing-found outcome is retried once it's old
+        // enough (new uploads appear, the matcher improves) — still never more than once per period.
+        Optional<PlaybackSource> cached = store.findByTrackId(trackId, PlaybackProvider.YOUTUBE)
+                .filter(s -> s.verified() || !isStale(s.updatedAt()));
         PlaybackSource source = cached.isPresent() ? cached.get() : coalescedResolve(trackId);
         if (!source.verified()) {
             throw new NoConfidentPlaybackMatchException(trackId);
@@ -102,6 +108,10 @@ public class PlaybackResolverService {
             return store.upsert(fromCandidate(id, trackId, best, MatchMethod.CANDIDATE, false, now));
         }
         return store.upsert(nonePlaceholder(id, trackId, best.score(), now));
+    }
+
+    private boolean isStale(Instant updatedAt) {
+        return updatedAt == null || updatedAt.plus(resolverProperties.retryUnverifiedAfter()).isBefore(clock.instant());
     }
 
     private static PlaybackSource fromCandidate(UUID id, UUID trackId, ScoredCandidate scored, MatchMethod method,

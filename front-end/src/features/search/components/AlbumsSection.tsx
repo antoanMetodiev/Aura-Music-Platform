@@ -1,12 +1,17 @@
+"use client";
+
+import { useCallback } from "react";
 import { SearchX } from "lucide-react";
-import { getTranslations } from "next-intl/server";
+import { useTranslations } from "next-intl";
 import { routes } from "@/config/routes";
 import { EmptyState } from "@/components/common/EmptyState";
-import { ApiError } from "@/lib/api/client";
-import { searchAlbums } from "@/features/music/api/catalogApi";
+import { searchAlbums, type SearchOptions } from "@/features/music/api/catalogApi";
 import { HorizontalSection } from "@/features/music/components/HorizontalSection";
 import { MediaCard } from "@/features/music/components/MediaCard";
+import { useProgressiveSearch } from "../hooks/useProgressiveSearch";
+import { SearchPhaseHint } from "./SearchPhaseHint";
 import { SectionError } from "./SectionError";
+import { MediaGridSkeleton, MediaRailSkeleton } from "./skeletons";
 
 interface AlbumsSectionProps {
   query: string;
@@ -17,15 +22,14 @@ interface AlbumsSectionProps {
   showEmptyState?: boolean;
 }
 
-/** Independent Suspense branch — fetches only `type=albums`. */
-export async function AlbumsSection({ query, limit, variant, showEmptyState }: AlbumsSectionProps) {
-  const t = await getTranslations("search");
-  let albums;
-  try {
-    albums = await searchAlbums(query, limit);
-  } catch (error) {
-    return <SectionError message={error instanceof ApiError ? `${t("unavailable.description")} (${error.code})` : t("unavailable.description")} />;
-  }
+/** Albums — local matches first, provider list when it lands (`useProgressiveSearch`). */
+export function AlbumsSection({ query, limit, variant, showEmptyState }: AlbumsSectionProps) {
+  const t = useTranslations("search");
+  const fetcher = useCallback((q: string, options: SearchOptions) => searchAlbums(q, limit, options), [limit]);
+  const { items: albums, phase, error } = useProgressiveSearch(query, fetcher);
+
+  if (phase === "loading") return variant === "grid" ? <MediaGridSkeleton /> : <MediaRailSkeleton />;
+  if (error) return <SectionError message={`${t("unavailable.description")} (${error.code})`} />;
 
   if (albums.length === 0) {
     return showEmptyState ? (
@@ -44,6 +48,14 @@ export async function AlbumsSection({ query, limit, variant, showEmptyState }: A
     />
   ));
 
-  if (variant === "grid") return <div className="flex flex-wrap gap-1">{cards}</div>;
-  return <HorizontalSection title={t("filters.albums")}>{cards}</HorizontalSection>;
+  return (
+    <div className="flex flex-col gap-2">
+      {variant === "grid" ? (
+        <div className="flex flex-wrap gap-1">{cards}</div>
+      ) : (
+        <HorizontalSection title={t("filters.albums")}>{cards}</HorizontalSection>
+      )}
+      <SearchPhaseHint phase={phase} />
+    </div>
+  );
 }

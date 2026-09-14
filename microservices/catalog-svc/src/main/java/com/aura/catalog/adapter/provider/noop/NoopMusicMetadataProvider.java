@@ -41,8 +41,18 @@ public class NoopMusicMetadataProvider implements MusicMetadataProvider {
     }
 
     @Override
+    public List<ProviderTrack> getAlbumTracks(String providerResourceId) {
+        return List.of();
+    }
+
+    @Override
     public Optional<ProviderArtist> getArtist(String providerResourceId) {
         return Optional.empty();
+    }
+
+    @Override
+    public List<ProviderTrack> getArtistTracks(String providerResourceId) {
+        return List.of();
     }
 
     @Override

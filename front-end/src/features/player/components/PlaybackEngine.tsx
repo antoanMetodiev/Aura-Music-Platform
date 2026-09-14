@@ -24,7 +24,14 @@ const HOST_ELEMENT_ID = "aura-youtube-player-host";
 export function PlaybackEngine() {
   const [isReady, setIsReady] = useState(false);
   const playerRef = useRef<YouTubePlayer | null>(null);
+  /** Track whose source we last asked for — guards against a stale resolve landing after another skip. */
   const loadedTrackIdRef = useRef<string | null>(null);
+  /**
+   * Track whose video is actually in the iframe right now. Differs from `loadedTrackIdRef` for the
+   * whole resolve round trip; while they differ the play/pause and progress effects must leave the
+   * player alone, or the *previous* song resumes for a second before the new one loads.
+   */
+  const playerTrackIdRef = useRef<string | null>(null);
   const seenSeekVersionRef = useRef<number | null>(null);
   const pendingUnmuteRef = useRef(false);
 
@@ -82,10 +89,18 @@ export function PlaybackEngine() {
     if (!current) {
       playerRef.current.pauseVideo();
       loadedTrackIdRef.current = null;
+      playerTrackIdRef.current = null;
       return;
     }
     if (loadedTrackIdRef.current === current.id) return;
     loadedTrackIdRef.current = current.id;
+
+    // Silence whatever is in the iframe *now*, before the network round trip — nothing of the
+    // previous track may be heard while the next one resolves. (pauseVideo, not stopVideo: the
+    // latter can report ENDED and would advance the queue.)
+    playerTrackIdRef.current = null;
+    playerRef.current.pauseVideo();
+    playerRef.current.mute();
 
     resolvePlaybackSource(current.id)
       .then((source) => {
@@ -99,19 +114,24 @@ export function PlaybackEngine() {
         pendingUnmuteRef.current = true;
         player.mute();
         player.loadVideoById(source.providerResourceId, 0);
-        player.playVideo();
+        playerTrackIdRef.current = current.id;
+        // Honour a pause pressed during the resolve instead of blindly starting.
+        if (usePlayerStore.getState().isPlaying) player.playVideo();
+        else player.pauseVideo();
       })
       .catch(() => {
         if (loadedTrackIdRef.current === current.id) usePlayerStore.getState().pause();
       });
   }, [current, isReady]);
 
-  // Play / pause.
+  // Play / pause — only once the iframe holds the current track; during a resolve the load above
+  // decides what to do when the video lands.
   useEffect(() => {
     if (!isReady || !playerRef.current) return;
+    if (playerTrackIdRef.current !== current?.id) return;
     if (isPlaying) playerRef.current.playVideo();
     else playerRef.current.pauseVideo();
-  }, [isPlaying, isReady]);
+  }, [isPlaying, isReady, current]);
 
   // Volume / mute — skipped while a fresh load is still waiting to unmute itself (see above).
   useEffect(() => {
@@ -135,6 +155,7 @@ export function PlaybackEngine() {
     if (seenSeekVersionRef.current === seekVersion) return;
     seenSeekVersionRef.current = seekVersion;
     if (!isReady || !playerRef.current) return;
+    if (playerTrackIdRef.current !== usePlayerStore.getState().current?.id) return;
     playerRef.current.seekTo(usePlayerStore.getState().positionMs / 1000, true);
   }, [seekVersion, isReady]);
 
@@ -144,7 +165,13 @@ export function PlaybackEngine() {
     const id = window.setInterval(() => {
       const player = playerRef.current;
       if (!player) return;
-      usePlayerStore.getState()._tick(Math.round(player.getCurrentTime() * 1000));
+      // While the next track resolves the iframe still holds the previous video — its time is not ours.
+      if (playerTrackIdRef.current !== usePlayerStore.getState().current?.id) return;
+      // Undefined/NaN while a freshly loaded video has no media time yet — skip the tick rather than
+      // push NaN into the store (and from there into the seek slider).
+      const seconds = player.getCurrentTime();
+      if (!Number.isFinite(seconds)) return;
+      usePlayerStore.getState()._tick(Math.round(seconds * 1000));
     }, 250);
     return () => window.clearInterval(id);
   }, [isPlaying, isReady]);

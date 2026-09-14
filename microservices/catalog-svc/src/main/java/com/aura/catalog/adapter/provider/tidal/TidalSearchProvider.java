@@ -1,8 +1,8 @@
 package com.aura.catalog.adapter.provider.tidal;
 
 import com.aura.catalog.adapter.provider.tidal.dto.JsonApiDocument;
+import com.aura.catalog.adapter.provider.tidal.dto.JsonApiRelationship;
 import com.aura.catalog.adapter.provider.tidal.dto.JsonApiResource;
-import com.aura.catalog.adapter.provider.tidal.dto.JsonApiResourceId;
 import com.aura.catalog.domain.model.Provider;
 import com.aura.catalog.domain.model.SearchType;
 import com.aura.catalog.domain.port.MusicSearchProvider;
@@ -14,6 +14,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -83,19 +84,16 @@ public class TidalSearchProvider implements MusicSearchProvider {
         JsonApiResource searchResult = seededFrom(searchDoc).ofType(TYPE_SEARCH_RESULTS).stream().findFirst().orElse(null);
         if (searchResult == null) return ProviderSearchResult.empty();
 
-        List<String> trackIds = orderedIds(searchResult, TYPE_TRACKS, limit);
-        List<String> albumIds = orderedIds(searchResult, TYPE_ALBUMS, limit);
-        List<String> artistIds = orderedIds(searchResult, TYPE_ARTISTS, limit);
-
-        // Three independent result sets — hydrate them concurrently instead of one after another.
+        // Three independent result sets — walk each one's cursor pages and hydrate concurrently
+        // instead of one after another.
         CompletableFuture<List<ProviderTrack>> tracksFuture = types.contains(SearchType.TRACKS)
-                ? CompletableFuture.supplyAsync(() -> hydrateTracks(searchDoc, trackIds), executor)
+                ? CompletableFuture.supplyAsync(() -> hydrateTracks(searchDoc, collectIds(searchResult, TYPE_TRACKS, limit)), executor)
                 : CompletableFuture.completedFuture(List.of());
         CompletableFuture<List<ProviderAlbum>> albumsFuture = types.contains(SearchType.ALBUMS)
-                ? CompletableFuture.supplyAsync(() -> hydrateAlbums(searchDoc, albumIds), executor)
+                ? CompletableFuture.supplyAsync(() -> hydrateAlbums(searchDoc, collectIds(searchResult, TYPE_ALBUMS, limit)), executor)
                 : CompletableFuture.completedFuture(List.of());
         CompletableFuture<List<ProviderArtist>> artistsFuture = types.contains(SearchType.ARTISTS)
-                ? CompletableFuture.supplyAsync(() -> hydrateArtists(searchDoc, artistIds), executor)
+                ? CompletableFuture.supplyAsync(() -> hydrateArtists(searchDoc, collectIds(searchResult, TYPE_ARTISTS, limit)), executor)
                 : CompletableFuture.completedFuture(List.of());
 
         CompletableFuture.allOf(tracksFuture, albumsFuture, artistsFuture).join();
@@ -108,9 +106,7 @@ public class TidalSearchProvider implements MusicSearchProvider {
         if (ids.isEmpty()) return List.of();
         ResourceIndex index = seededFrom(searchDoc);
 
-        for (List<String> batch : TidalHydrator.chunks(new LinkedHashSet<>(ids), properties.batchSize())) {
-            index.add(client.tracksByIds(batch, TidalIncludes.TRACK), objectMapper);
-        }
+        runBatches(new LinkedHashSet<>(ids), TidalIncludes.TRACK, index, client::tracksByIds).join();
 
         // Albums and the tracks' own artists are both independent of each other at this point —
         // run them concurrently. (Artists reachable only via an album relation, not any track's own,
@@ -130,9 +126,7 @@ public class TidalSearchProvider implements MusicSearchProvider {
         if (ids.isEmpty()) return List.of();
         ResourceIndex index = seededFrom(searchDoc);
 
-        for (List<String> batch : TidalHydrator.chunks(new LinkedHashSet<>(ids), properties.batchSize())) {
-            index.add(client.albumsByIds(batch, TidalIncludes.ALBUM), objectMapper);
-        }
+        runBatches(new LinkedHashSet<>(ids), TidalIncludes.ALBUM, index, client::albumsByIds).join();
         Set<String> artistIds = TidalHydrator.referencedIds(index, TYPE_ALBUMS, REL_ARTISTS);
         runBatches(artistIds, TidalIncludes.ARTIST, index, client::artistsByIds).join();
 
@@ -144,9 +138,7 @@ public class TidalSearchProvider implements MusicSearchProvider {
         if (ids.isEmpty()) return List.of();
         ResourceIndex index = seededFrom(searchDoc);
 
-        for (List<String> batch : TidalHydrator.chunks(new LinkedHashSet<>(ids), properties.batchSize())) {
-            index.add(client.artistsByIds(batch, TidalIncludes.ARTIST), objectMapper);
-        }
+        runBatches(new LinkedHashSet<>(ids), TidalIncludes.ARTIST, index, client::artistsByIds).join();
         return ids.stream().map(id -> index.get(TYPE_ARTISTS, id)).flatMap(Optional::stream)
                 .map(r -> mapper.toArtist(r, index)).toList();
     }
@@ -168,10 +160,22 @@ public class TidalSearchProvider implements MusicSearchProvider {
         return index;
     }
 
-    private static List<String> orderedIds(JsonApiResource searchResult, String relationship, int limit) {
-        return searchResult.related(relationship).stream()
-                .map(JsonApiResourceId::id)
-                .limit(limit)
-                .toList();
+    /**
+     * TIDAL inlines only the first 20 ids of each result set and paginates the rest behind a cursor
+     * link — keep following it until we have {@code limit} ids or it runs out. Pages are cursor-chained,
+     * so this walk is necessarily sequential; the three types walk theirs concurrently (see search()).
+     */
+    private List<String> collectIds(JsonApiResource searchResult, String relationship, int limit) {
+        List<String> ids = new ArrayList<>();
+        JsonApiRelationship rel = searchResult.relationships() == null ? null : searchResult.relationships().get(relationship);
+        if (rel == null) return ids;
+        rel.ids().forEach(ref -> ids.add(ref.id()));
+        Optional<String> next = rel.nextLink();
+        while (ids.size() < limit && next.isPresent()) {
+            JsonApiDocument page = client.page(next.get());
+            page.dataIds().forEach(ref -> ids.add(ref.id()));
+            next = page.nextLink();
+        }
+        return ids.size() > limit ? List.copyOf(ids.subList(0, limit)) : ids;
     }
 }

@@ -41,7 +41,8 @@ export function MediaCard({
         className,
       )}
     >
-      <Link href={href} className="absolute inset-0 z-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={title} />
+      {/* z-[1] keeps the link above the (positioned, later-in-DOM) artwork so clicking the cover navigates; the play button sits above it at z-10. */}
+      <Link href={href} className="absolute inset-0 z-[1] rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={title} />
 
       <div className="relative">
         <ArtworkImage

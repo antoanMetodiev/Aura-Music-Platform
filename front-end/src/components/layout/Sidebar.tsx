@@ -22,6 +22,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ArtworkImage } from "@/components/common/ArtworkImage";
 import type { PlaylistSummary } from "@/types/catalog";
 import { AuraLogo } from "./AuraLogo";
+import { ResizeHandle } from "./ResizeHandle";
 
 type NavKey = "home" | "search" | "library" | "likedSongs" | "recentlyPlayed" | "friends" | "notifications";
 
@@ -52,6 +53,8 @@ export function Sidebar({ playlists }: SidebarProps) {
   const t = useTranslations("nav");
   const pathname = usePathname();
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
+  const width = useUiStore((s) => s.sidebarWidth);
+  const resizing = useUiStore((s) => s.resizing);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
 
   const isActive = (href: string) =>
@@ -62,10 +65,13 @@ export function Sidebar({ playlists }: SidebarProps) {
   const rowLayout = collapsed ? "justify-center px-0" : "max-lg:justify-center max-lg:px-0";
 
   return (
+    <>
     <aside
+      style={{ "--sidebar-w": `${width}px` } as React.CSSProperties}
       className={cn(
-        "hidden shrink-0 flex-col rounded-xl bg-panel transition-[width] duration-200 md:flex",
-        collapsed ? "w-[68px]" : "w-[68px] lg:w-64",
+        "hidden shrink-0 flex-col rounded-xl bg-panel md:flex",
+        resizing ? "transition-none" : "transition-[width] duration-200",
+        collapsed ? "w-[68px]" : "w-[68px] lg:w-(--sidebar-w)",
       )}
     >
       {/* Brand + collapse */}
@@ -172,6 +178,9 @@ export function Sidebar({ playlists }: SidebarProps) {
         </div>
       )}
     </aside>
+    {/* Below lg the sidebar is a fixed icon rail — the gutter stays as spacing but can't be dragged. */}
+    <ResizeHandle panel="sidebar" className="hidden md:block max-lg:pointer-events-none" />
+    </>
   );
 }
 

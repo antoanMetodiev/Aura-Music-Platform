@@ -35,7 +35,7 @@ music:
   providers:
     youtube:
       enabled: ${YOUTUBE_ENABLED:true}
-      api-key: ${YOUTUBE_API_KEY}
+      api-key: ${YOUTUBE_API_KEY:}
       region-code: ${YOUTUBE_REGION_CODE:BG}
 
 aura:
@@ -43,8 +43,20 @@ aura:
   catalog-client:
     base-url: ${CATALOG_SVC_URL:http://localhost:8081}
 
-# playback.matching.* overrides MatchingProperties' scoring weights/thresholds (Project-Info.md
-# §18) — left at their documented defaults for now; nothing to override yet.
+# playback.matching.* overrides MatchingProperties' scoring weights/thresholds (Project-Info.md §18).
+playback:
+  matching:
+    # Label channels trusted as official uploaders (+labelChannelBonus). Channels whose name contains
+    # "Records" get the same credit without being listed.
+    trusted-label-channels:
+      - Virginia Records
+      - FacingTheSunOfficial
+      - Monte Music
+      - Facing The Sun
+  resolver:
+    # A track that resolved to nothing confident is looked up again after this long — YouTube
+    # uploads change, and the matcher may have improved.
+    retry-unverified-after: 7d
 
 resilience4j:
   circuitbreaker:

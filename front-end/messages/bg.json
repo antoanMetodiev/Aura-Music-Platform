@@ -41,7 +41,9 @@
     "language": "Език",
     "primary": "Основна навигация",
     "personal": "Лични",
-    "mobile": "Мобилна навигация"
+    "mobile": "Мобилна навигация",
+    "resize": "Промени ширината на менюто",
+    "resizeHint": "Влачи за ширина · двоен клик за връщане"
   },
   "languages": {
     "en": "English",
@@ -67,6 +69,8 @@
       "title": "Търсенето е недостъпно",
       "description": "Не успяхме да се свържем с музикалния каталог. Провери дали backend-ът работи."
     },
+    "refining": "Показваме каквото вече имаме — проверяваме за още…",
+    "localOnly": "Показваме само резултати от нашия каталог — доставчикът на музика в момента е недостъпен.",
     "genres": {
       "pop": "Поп",
       "hipHop": "Хип-хоп",
@@ -99,7 +103,9 @@
     "sourceVerified": "YouTube · потвърдено съвпадение",
     "activityLiked": "<name></name> хареса <track></track>",
     "activityPlaylistCreated": "<name></name> създаде плейлист <playlist></playlist>",
-    "activityFriendAccepted": "<name></name> вече е твой приятел"
+    "activityFriendAccepted": "<name></name> вече е твой приятел",
+    "resize": "Промени ширината на панела",
+    "resizeHint": "Влачи за ширина · двоен клик за връщане"
   },
   "presence": {
     "listening": "Слуша сега",
@@ -166,6 +172,21 @@
     "hours": "{n}ч",
     "days": "{n}д",
     "weeks": "{n}с"
+  },
+  "album": {
+    "types": {
+      "ALBUM": "Албум",
+      "EP": "EP",
+      "SINGLE": "Сингъл",
+      "UNKNOWN": "Албум"
+    },
+    "songs": "{count, plural, one {# песен} other {# песни}}",
+    "disc": "Диск {number}",
+    "noTracks": "Все още няма налични песни за този албум.",
+    "tracksUnavailable": {
+      "title": "Песните не можаха да се заредят",
+      "description": "Нямаме връзка с музикалния каталог. Опитай отново след малко."
+    }
   },
   "pages": {
     "search": "Търсене",

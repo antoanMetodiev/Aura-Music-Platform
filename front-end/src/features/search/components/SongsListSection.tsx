@@ -1,10 +1,15 @@
+"use client";
+
+import { useCallback } from "react";
 import { SearchX } from "lucide-react";
-import { getTranslations } from "next-intl/server";
+import { useTranslations } from "next-intl";
 import { EmptyState } from "@/components/common/EmptyState";
-import { ApiError } from "@/lib/api/client";
-import { searchTracks } from "@/features/music/api/catalogApi";
+import { searchTracks, type SearchOptions } from "@/features/music/api/catalogApi";
 import { TrackRow } from "@/features/music/components/TrackRow";
+import { useProgressiveSearch } from "../hooks/useProgressiveSearch";
+import { SearchPhaseHint } from "./SearchPhaseHint";
 import { SectionError } from "./SectionError";
+import { TrackListSkeleton } from "./skeletons";
 
 interface SongsListSectionProps {
   query: string;
@@ -15,15 +20,14 @@ interface SongsListSectionProps {
   showEmptyState?: boolean;
 }
 
-/** Independent Suspense branch for the full-width "Songs" filter — fetches only `type=tracks`. */
-export async function SongsListSection({ query, limit, showEmptyState }: SongsListSectionProps) {
-  const t = await getTranslations("search");
-  let tracks;
-  try {
-    tracks = await searchTracks(query, limit);
-  } catch (error) {
-    return <SectionError message={error instanceof ApiError ? `${t("unavailable.description")} (${error.code})` : t("unavailable.description")} />;
-  }
+/** Full-width "Songs" filter — local matches first, provider list when it lands (`useProgressiveSearch`). */
+export function SongsListSection({ query, limit, showEmptyState }: SongsListSectionProps) {
+  const t = useTranslations("search");
+  const fetcher = useCallback((q: string, options: SearchOptions) => searchTracks(q, limit, options), [limit]);
+  const { items: tracks, phase, error } = useProgressiveSearch(query, fetcher);
+
+  if (phase === "loading") return <TrackListSkeleton />;
+  if (error) return <SectionError message={`${t("unavailable.description")} (${error.code})`} />;
 
   if (tracks.length === 0) {
     return showEmptyState ? (
@@ -32,10 +36,13 @@ export async function SongsListSection({ query, limit, showEmptyState }: SongsLi
   }
 
   return (
-    <ul className="flex flex-col">
-      {tracks.map((track, index) => (
-        <TrackRow key={track.id} index={index} track={track} context={tracks} />
-      ))}
-    </ul>
+    <div className="flex flex-col gap-2">
+      <ul className="flex flex-col">
+        {tracks.map((track, index) => (
+          <TrackRow key={track.id} index={index} track={track} context={tracks} />
+        ))}
+      </ul>
+      <SearchPhaseHint phase={phase} />
+    </div>
   );
 }

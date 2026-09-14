@@ -30,7 +30,7 @@ class TidalMetadataProviderTest {
             "https://openapi.tidal.com/v2", "https://auth.tidal.com/v1/oauth2/token",
             "US", Duration.ofSeconds(60), 20
     );
-    private final TidalMetadataProvider provider = new TidalMetadataProvider(client, mapper, properties, objectMapper);
+    private final TidalMetadataProvider provider = new TidalMetadataProvider(client, mapper, properties, objectMapper, java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
 
     @Test
     void getTrack_fetchesTrackThenBatchHydratesItsAlbum() {

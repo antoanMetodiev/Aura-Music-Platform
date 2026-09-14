@@ -5,6 +5,7 @@ import { MiniPlayer } from "@/features/player/components/MiniPlayer";
 import type { PlaylistSummary } from "@/types/catalog";
 import type { ActivityItem, FriendPresence, UserSummary } from "@/types/social";
 import { MobileBottomNav } from "./MobileBottomNav";
+import { UiStateHydrator } from "./ResizeHandle";
 import { RightPanel } from "./RightPanel";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
@@ -21,7 +22,7 @@ interface AppShellProps {
 /**
  * The frame every authenticated page lives in (FRONTEND.md §3).
  *
- *   desktop:  [sidebar] [topbar + main] [right panel]  /  [player bar]
+ *   desktop:  [sidebar]|[topbar + main]|[right panel]  /  [player bar]   (| = drag-to-resize gutter)
  *   mobile:   [topbar + main]  /  [mini player]  /  [bottom nav]
  *
  * Server component: it only lays things out; interactivity lives in the children.
@@ -30,8 +31,9 @@ export function AppShell({ user, playlists, presence, activity, unreadNotificati
   return (
     <div className="flex h-dvh flex-col bg-background">
       <PlaybackEngine />
+      <UiStateHydrator />
 
-      <div className="flex min-h-0 flex-1 gap-2 p-2 max-md:p-0">
+      <div className="flex min-h-0 flex-1 p-2 max-md:p-0">
         <Sidebar playlists={playlists} />
 
         <main

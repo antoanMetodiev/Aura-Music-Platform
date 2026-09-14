@@ -24,6 +24,16 @@ export interface AlbumSummary {
   releaseYear?: number;
 }
 
+export type AlbumType = "ALBUM" | "EP" | "SINGLE" | "UNKNOWN";
+
+export interface Album extends AlbumSummary {
+  albumType: AlbumType;
+  /** ISO date (YYYY-MM-DD) when known. */
+  releaseDate?: string;
+  explicit: boolean;
+  numberOfTracks: number;
+}
+
 export interface Track {
   id: string;
   title: string;
@@ -32,6 +42,9 @@ export interface Track {
   artists: ArtistSummary[];
   album: AlbumSummary;
   artwork?: Artwork;
+  /** Position inside the album — only set once the album's tracklist has been synced. */
+  volumeNumber?: number;
+  trackNumber?: number;
   /** False when the Playback Resolver has no trusted source yet. */
   playbackAvailable: boolean;
 }

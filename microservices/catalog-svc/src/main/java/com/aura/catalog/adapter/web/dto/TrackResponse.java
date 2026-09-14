@@ -12,6 +12,8 @@ public record TrackResponse(
         boolean explicit,
         List<ArtistSummaryResponse> artists,
         AlbumSummaryResponse album,
-        ArtworkResponse artwork
+        ArtworkResponse artwork,
+        Integer volumeNumber,
+        Integer trackNumber
 ) {
 }

@@ -22,10 +22,33 @@ import org.springframework.validation.annotation.Validated;
 public record MatchingProperties(
         @DefaultValue("100") int isrcExactMatch,
         @DefaultValue("40") int officialChannelBonus,
+        /** Channel is a known label (see {@code trustedLabelChannels}) or reads like one ("… Records"). */
+        @DefaultValue("30") int labelChannelBonus,
+        /** Exact channel titles trusted as labels, case-insensitive. */
+        @DefaultValue({}) java.util.List<String> trustedLabelChannels,
         @DefaultValue("25") int exactArtistMatch,
         @DefaultValue("25") int exactTitleMatch,
-        @DefaultValue("20") int durationWithin1SecBonus,
-        @DefaultValue("10") int durationWithin3SecBonus,
+        /** Title differs only by transliteration/spelling noise ("Obestavam" vs "Obeshtavam"). */
+        @DefaultValue("15") int fuzzyTitleMatch,
+        /**
+         * The candidate's title doesn't mention the song at all. Large enough that channel + artist +
+         * keyword bonuses can never lift such a candidate to a confident match — the artist's own
+         * channel uploading a *different* song used to win on exactly those signals.
+         */
+        @DefaultValue("-100") int missingTitlePenalty,
+        /**
+         * Duration windows are wider than the doc's 1s/3s example on purpose: provider durations are
+         * rounded and real uploads of the same recording routinely differ by a few seconds. With the
+         * title gate rejecting different songs outright, duration only has to separate *versions* of
+         * the same song (radio edit vs extended), which differ by far more than this.
+         */
+        @DefaultValue("2000") long durationTightToleranceMs,
+        @DefaultValue("20") int durationTightBonus,
+        @DefaultValue("15000") long durationLooseToleranceMs,
+        @DefaultValue("10") int durationLooseBonus,
+        /** Past this the candidate is a different *version* (live set, extended mix, sped up) even if the title matches. */
+        @DefaultValue("20000") long durationMismatchToleranceMs,
+        @DefaultValue("-40") int durationMismatchPenalty,
         @DefaultValue("15") int officialAudioKeyword,
         @DefaultValue("10") int officialMusicVideoKeyword,
 

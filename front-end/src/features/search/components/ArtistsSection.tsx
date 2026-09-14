@@ -1,12 +1,17 @@
+"use client";
+
+import { useCallback } from "react";
 import { SearchX } from "lucide-react";
-import { getTranslations } from "next-intl/server";
+import { useTranslations } from "next-intl";
 import { routes } from "@/config/routes";
 import { EmptyState } from "@/components/common/EmptyState";
-import { ApiError } from "@/lib/api/client";
-import { searchArtists } from "@/features/music/api/catalogApi";
+import { searchArtists, type SearchOptions } from "@/features/music/api/catalogApi";
 import { HorizontalSection } from "@/features/music/components/HorizontalSection";
 import { MediaCard } from "@/features/music/components/MediaCard";
+import { useProgressiveSearch } from "../hooks/useProgressiveSearch";
+import { SearchPhaseHint } from "./SearchPhaseHint";
 import { SectionError } from "./SectionError";
+import { MediaGridSkeleton, MediaRailSkeleton } from "./skeletons";
 
 interface ArtistsSectionProps {
   query: string;
@@ -17,16 +22,15 @@ interface ArtistsSectionProps {
   showEmptyState?: boolean;
 }
 
-/** Independent Suspense branch — fetches only `type=artists`. */
-export async function ArtistsSection({ query, limit, variant, showEmptyState }: ArtistsSectionProps) {
-  const t = await getTranslations("search");
-  const home = await getTranslations("home");
-  let artists;
-  try {
-    artists = await searchArtists(query, limit);
-  } catch (error) {
-    return <SectionError message={error instanceof ApiError ? `${t("unavailable.description")} (${error.code})` : t("unavailable.description")} />;
-  }
+/** Artists — local matches first, provider list when it lands (`useProgressiveSearch`). */
+export function ArtistsSection({ query, limit, variant, showEmptyState }: ArtistsSectionProps) {
+  const t = useTranslations("search");
+  const home = useTranslations("home");
+  const fetcher = useCallback((q: string, options: SearchOptions) => searchArtists(q, limit, options), [limit]);
+  const { items: artists, phase, error } = useProgressiveSearch(query, fetcher);
+
+  if (phase === "loading") return variant === "grid" ? <MediaGridSkeleton shape="circle" /> : <MediaRailSkeleton shape="circle" />;
+  if (error) return <SectionError message={`${t("unavailable.description")} (${error.code})`} />;
 
   if (artists.length === 0) {
     return showEmptyState ? (
@@ -46,6 +50,14 @@ export async function ArtistsSection({ query, limit, variant, showEmptyState }: 
     />
   ));
 
-  if (variant === "grid") return <div className="flex flex-wrap gap-1">{cards}</div>;
-  return <HorizontalSection title={t("filters.artists")}>{cards}</HorizontalSection>;
+  return (
+    <div className="flex flex-col gap-2">
+      {variant === "grid" ? (
+        <div className="flex flex-wrap gap-1">{cards}</div>
+      ) : (
+        <HorizontalSection title={t("filters.artists")}>{cards}</HorizontalSection>
+      )}
+      <SearchPhaseHint phase={phase} />
+    </div>
+  );
 }

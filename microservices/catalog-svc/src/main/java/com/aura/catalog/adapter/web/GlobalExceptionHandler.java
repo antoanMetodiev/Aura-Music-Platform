@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
  * Turns every exception the catalog API can throw into the {@code {code, message, traceId}} shape
@@ -44,6 +45,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({MethodArgumentNotValidException.class, ConstraintViolationException.class, IllegalArgumentException.class})
     public ResponseEntity<ApiError> badRequest(Exception e) {
         return error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", e.getMessage());
+    }
+
+    /** A path/query value that can't be converted (e.g. a non-UUID id) is the caller's mistake, not ours. */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> typeMismatch(MethodArgumentTypeMismatchException e) {
+        return error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Invalid value for '" + e.getName() + "'");
     }
 
     @ExceptionHandler(Exception.class)

@@ -82,7 +82,9 @@ public class TidalMapper {
                 Boolean.TRUE.equals(a.explicit()),
                 a.popularity() == null ? 0.0 : a.popularity(),
                 album,
-                artists
+                artists,
+                null,
+                null
         );
     }
 

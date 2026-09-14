@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { Locale } from "@/i18n/routing";
@@ -6,7 +5,6 @@ import { AlbumsSection } from "@/features/search/components/AlbumsSection";
 import { ArtistsSection } from "@/features/search/components/ArtistsSection";
 import { filterFromTypeParam, typeParamFromFilter } from "@/features/search/lib/searchFilter";
 import { SearchFilterChips } from "@/features/search/components/SearchFilterChips";
-import { MediaGridSkeleton, MediaRailSkeleton, TopResultAndSongsSkeleton, TrackListSkeleton } from "@/features/search/components/skeletons";
 import { SongsListSection } from "@/features/search/components/SongsListSection";
 import { TopResultAndSongsSection } from "@/features/search/components/TopResultAndSongsSection";
 
@@ -17,9 +15,10 @@ export async function generateMetadata({ params }: PageProps<"/[locale]/search/[
 }
 
 /**
- * Every section below fetches (and streams in via Suspense) independently — the page shell and
- * filter chips render immediately, and each section pops in the moment ITS OWN `catalog-svc` call
- * resolves, instead of the whole page waiting on the slowest of tracks/albums/artists.
+ * The page shell and filter chips render on the server immediately; every section below is a
+ * client component that fires two `catalog-svc` calls at once — our own catalog (instant) and the
+ * provider-backed search — and paints local matches first (see `useProgressiveSearch`). Sections
+ * are independent: each pops in / updates the moment its own calls resolve.
  */
 export default async function SearchResultsPage({
   params,
@@ -39,35 +38,15 @@ export default async function SearchResultsPage({
 
       {filter === "all" && (
         <div className="flex flex-col gap-8">
-          <Suspense fallback={<TopResultAndSongsSkeleton />}>
-            <TopResultAndSongsSection query={query} />
-          </Suspense>
-          <Suspense fallback={<MediaRailSkeleton />}>
-            <AlbumsSection query={query} limit={10} variant="rail" />
-          </Suspense>
-          <Suspense fallback={<MediaRailSkeleton shape="circle" />}>
-            <ArtistsSection query={query} limit={10} variant="rail" />
-          </Suspense>
+          <TopResultAndSongsSection query={query} />
+          <AlbumsSection query={query} limit={10} variant="rail" />
+          <ArtistsSection query={query} limit={10} variant="rail" />
         </div>
       )}
 
-      {type === "tracks" && (
-        <Suspense fallback={<TrackListSkeleton />} key={query}>
-          <SongsListSection query={query} limit={24} showEmptyState />
-        </Suspense>
-      )}
-
-      {type === "albums" && (
-        <Suspense fallback={<MediaGridSkeleton />} key={query}>
-          <AlbumsSection query={query} limit={24} variant="grid" showEmptyState />
-        </Suspense>
-      )}
-
-      {type === "artists" && (
-        <Suspense fallback={<MediaGridSkeleton shape="circle" />} key={query}>
-          <ArtistsSection query={query} limit={24} variant="grid" showEmptyState />
-        </Suspense>
-      )}
+      {type === "tracks" && <SongsListSection query={query} limit={60} showEmptyState />}
+      {type === "albums" && <AlbumsSection query={query} limit={24} variant="grid" showEmptyState />}
+      {type === "artists" && <ArtistsSection query={query} limit={24} variant="grid" showEmptyState />}
     </div>
   );
 }

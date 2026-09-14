@@ -10,7 +10,7 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "music.providers.youtube")
 public record YouTubeProperties(
         @DefaultValue("true") boolean enabled,
-        @NotBlank String apiKey,
+        String apiKey,
         @NotBlank @DefaultValue("https://www.googleapis.com/youtube/v3") String apiBaseUrl,
         /** "Music" category — keeps search.list from returning unrelated video results. */
         @DefaultValue("10") String musicCategoryId,

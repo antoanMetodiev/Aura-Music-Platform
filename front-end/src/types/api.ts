@@ -35,6 +35,9 @@ export interface TrackDto {
   artists: ArtistSummaryDto[];
   album: AlbumSummaryDto | null;
   artwork: ArtworkDto | null;
+  /** Position inside the album; null until the album's tracklist has been synced. */
+  volumeNumber: number | null;
+  trackNumber: number | null;
 }
 
 export interface AlbumDto {

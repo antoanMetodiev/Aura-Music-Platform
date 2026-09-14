@@ -23,6 +23,12 @@ public record CatalogProperties(
         /** In-memory (Caffeine) copy of hydrated search results, in front of the Postgres cache. */
         @NotNull @DefaultValue("10m") Duration searchMemoryTtl,
         @Min(1) @DefaultValue("10") int defaultSearchLimit,
-        @Min(1) @DefaultValue("20") int maxSearchLimit
+        @Min(1) @DefaultValue("60") int maxSearchLimit,
+        /**
+         * How many ids the provider returns per page. A cached list whose size is an exact multiple of
+         * this (and shorter than what is asked for) may have more pages behind it, so it is re-fetched
+         * deeper rather than served short.
+         */
+        @Min(1) @DefaultValue("20") int searchPageSize
 ) {
 }

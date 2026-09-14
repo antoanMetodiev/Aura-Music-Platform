@@ -4,11 +4,8 @@ import com.aura.catalog.domain.model.Artist;
 import com.aura.catalog.domain.model.Artwork;
 import com.aura.catalog.domain.model.Provider;
 import com.aura.catalog.domain.model.ProviderReference;
-import com.aura.catalog.domain.port.ProviderArtist;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -24,20 +21,17 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Hand-rolled JDBC access for {@code catalog.artists} (Project-Info.md §14: upsert-by-provider-ref
- * cache). Uses {@link JdbcClient} directly rather than a Spring Data JDBC {@code CrudRepository} —
- * the find-existing-row-then-update-or-insert-with-RETURNING flow doesn't map cleanly onto Spring
- * Data JDBC's aggregate-save model, and this is the kind of code that benefits from explicit SQL.
+ * Read side of {@code catalog.artists}, hand-rolled on {@link JdbcClient} rather than a Spring Data
+ * JDBC {@code CrudRepository} — this is the kind of code that benefits from explicit SQL. All writes
+ * go through {@link CatalogBatchWriter}.
  */
 @Repository
 public class ArtistRepository {
 
     private final JdbcClient jdbc;
-    private final ConflictRetryWriter conflictRetryWriter;
 
-    public ArtistRepository(JdbcClient jdbc, ConflictRetryWriter conflictRetryWriter) {
+    public ArtistRepository(JdbcClient jdbc) {
         this.jdbc = jdbc;
-        this.conflictRetryWriter = conflictRetryWriter;
     }
 
     public Optional<Artist> findById(UUID id) {
@@ -45,11 +39,19 @@ public class ArtistRepository {
                 .param("id", id)
                 .query(ArtistRepository::mapRow)
                 .optional()
-                .map(this::hydrate);
+                .map(row -> toArtist(row, findRefs(row.id())));
     }
 
     public Optional<Artist> findByProviderRef(ProviderReference ref) {
-        return findIdByProviderRef(ref).flatMap(this::findById);
+        return jdbc.sql("""
+                        SELECT artist_id FROM catalog.artist_provider_refs
+                        WHERE provider = :provider AND provider_resource_id = :providerResourceId
+                        """)
+                .param("provider", ref.provider().name())
+                .param("providerResourceId", ref.providerResourceId())
+                .query(UUID.class)
+                .optional()
+                .flatMap(this::findById);
     }
 
     /** Input order preserved; ids with no row are skipped. Two round trips regardless of list size. */
@@ -73,8 +75,9 @@ public class ArtistRepository {
         return result;
     }
 
-    private Map<UUID, List<ProviderReference>> findRefsByIds(List<UUID> ids) {
+    Map<UUID, List<ProviderReference>> findRefsByIds(List<UUID> ids) {
         Map<UUID, List<ProviderReference>> result = new HashMap<>();
+        if (ids.isEmpty()) return result;
         jdbc.sql("SELECT artist_id, provider, provider_resource_id FROM catalog.artist_provider_refs WHERE artist_id IN (:ids)")
                 .param("ids", ids)
                 .query((rs, rowNum) -> Map.entry((UUID) rs.getObject("artist_id"),
@@ -84,119 +87,21 @@ public class ArtistRepository {
         return result;
     }
 
-    /**
-     * Insert-or-update by provider reference, then return the full domain {@link Artist}.
-     * Runs its own transaction: callers (album/track upserts) that need this row committed
-     * before referencing it via a foreign key call this directly rather than nesting transactions.
-     *
-     * {@code CatalogService} now upserts several tracks/albums/artists concurrently, so two
-     * threads can both find no existing row for the same provider reference and both attempt an
-     * insert — see {@link ConflictRetryWriter} for why the losing insert runs in its own
-     * transaction and how the fallback to an update is safe.
-     */
-    @Transactional
-    public Artist upsert(ProviderArtist source) {
-        ProviderReference ref = source.ref();
-        Optional<UUID> existingId = findIdByProviderRef(ref);
-
-        ArtistRow row = existingId.isPresent() ? update(existingId.get(), source) : insertOrFallBackToUpdate(source, ref);
-        List<ProviderReference> refs = findRefs(row.id());
-        return toArtist(row, refs);
-    }
-
-    private ArtistRow insertOrFallBackToUpdate(ProviderArtist source, ProviderReference ref) {
-        try {
-            return conflictRetryWriter.runInNewTransaction(() -> insert(source, ref));
-        } catch (DuplicateKeyException e) {
-            UUID winnerId = findIdByProviderRef(ref).orElseThrow(() -> e);
-            return update(winnerId, source);
-        }
-    }
-
-    // ── Internals ──────────────────────────────────────────────────────────────────────────
-
-    private Optional<UUID> findIdByProviderRef(ProviderReference ref) {
-        return jdbc.sql("""
-                        SELECT artist_id FROM catalog.artist_provider_refs
-                        WHERE provider = :provider AND provider_resource_id = :providerResourceId
-                        """)
-                .param("provider", ref.provider().name())
-                .param("providerResourceId", ref.providerResourceId())
-                .query(UUID.class)
-                .optional();
-    }
-
-    private ArtistRow update(UUID id, ProviderArtist source) {
-        Artwork artwork = source.artwork();
-        return jdbc.sql("""
-                        UPDATE catalog.artists
-                        SET name = :name, artwork_url = :artworkUrl, artwork_width = :artworkWidth,
-                            artwork_height = :artworkHeight, popularity = :popularity,
-                            provider_synced_at = now(), updated_at = now()
-                        WHERE id = :id
-                        RETURNING *
-                        """)
-                .param("id", id)
-                .param("name", source.name())
-                .param("artworkUrl", artwork == null ? null : artwork.url())
-                .param("artworkWidth", artwork == null ? null : artwork.width())
-                .param("artworkHeight", artwork == null ? null : artwork.height())
-                .param("popularity", source.popularity())
-                .query(ArtistRepository::mapRow)
-                .single();
-    }
-
-    private ArtistRow insert(ProviderArtist source, ProviderReference ref) {
-        UUID id = UUID.randomUUID();
-        Artwork artwork = source.artwork();
-        ArtistRow row = jdbc.sql("""
-                        INSERT INTO catalog.artists
-                            (id, name, artwork_url, artwork_width, artwork_height, popularity,
-                             provider_synced_at, created_at, updated_at)
-                        VALUES (:id, :name, :artworkUrl, :artworkWidth, :artworkHeight, :popularity, now(), now(), now())
-                        RETURNING *
-                        """)
-                .param("id", id)
-                .param("name", source.name())
-                .param("artworkUrl", artwork == null ? null : artwork.url())
-                .param("artworkWidth", artwork == null ? null : artwork.width())
-                .param("artworkHeight", artwork == null ? null : artwork.height())
-                .param("popularity", source.popularity())
-                .query(ArtistRepository::mapRow)
-                .single();
-
-        jdbc.sql("INSERT INTO catalog.artist_provider_refs (artist_id, provider, provider_resource_id) VALUES (:id, :provider, :providerResourceId)")
-                .param("id", id)
-                .param("provider", ref.provider().name())
-                .param("providerResourceId", ref.providerResourceId())
-                .update();
-
-        return row;
-    }
-
     private List<ProviderReference> findRefs(UUID id) {
-        return jdbc.sql("SELECT provider, provider_resource_id FROM catalog.artist_provider_refs WHERE artist_id = :id")
-                .param("id", id)
-                .query((rs, rowNum) -> new ProviderReference(
-                        Provider.valueOf(rs.getString("provider")),
-                        rs.getString("provider_resource_id")))
-                .list();
+        return findRefsByIds(List.of(id)).getOrDefault(id, List.of());
     }
 
-    private Artist hydrate(ArtistRow row) {
-        return toArtist(row, findRefs(row.id()));
-    }
-
-    private static Artist toArtist(ArtistRow row, List<ProviderReference> refs) {
+    static Artist toArtist(ArtistRow row, List<ProviderReference> refs) {
         return new Artist(row.id(), row.name(), row.artwork(), row.popularity(), refs, row.providerSyncedAt(), row.createdAt(), row.updatedAt());
     }
 
-    private static ArtistRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+    static ArtistRow mapRow(ResultSet rs, int rowNum) throws SQLException {
         String artworkUrl = rs.getString("artwork_url");
         Artwork artwork = artworkUrl == null ? null
                 : new Artwork(artworkUrl, rs.getInt("artwork_width"), rs.getInt("artwork_height"));
         return new ArtistRow(
                 (UUID) rs.getObject("id"),
+                rs.getString("primary_ref"),
                 rs.getString("name"),
                 artwork,
                 rs.getDouble("popularity"),
@@ -211,7 +116,7 @@ public class ArtistRepository {
         return ts == null ? null : ts.toInstant();
     }
 
-    private record ArtistRow(UUID id, String name, Artwork artwork, double popularity,
-                              Instant providerSyncedAt, Instant createdAt, Instant updatedAt) {
+    record ArtistRow(UUID id, String primaryRef, String name, Artwork artwork, double popularity,
+                     Instant providerSyncedAt, Instant createdAt, Instant updatedAt) {
     }
 }

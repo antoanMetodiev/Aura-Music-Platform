@@ -1,6 +1,7 @@
 package com.aura.catalog.adapter.provider.tidal;
 
 import com.aura.catalog.adapter.provider.tidal.dto.JsonApiDocument;
+import com.aura.catalog.adapter.provider.tidal.dto.JsonApiLinkage;
 import com.aura.catalog.adapter.provider.tidal.dto.JsonApiResource;
 import com.aura.catalog.domain.model.Provider;
 import com.aura.catalog.domain.port.MusicMetadataProvider;
@@ -11,6 +12,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -73,6 +76,65 @@ public class TidalMetadataProvider implements MusicMetadataProvider {
             ResourceIndex index = indexOf(doc);
             return mapper.toAlbum(requireResource(index, TYPE_ALBUMS, providerResourceId), index);
         });
+    }
+
+    /**
+     * Walks every page of the album's {@code items} relationship (cursor-chained, so sequential),
+     * keeping only tracks (albums can also list videos), then batch-fetches the full track records
+     * plus their albums/artists — the inline {@code include=items} resources carry attributes only,
+     * no relationships, so they can't be mapped as-is.
+     */
+    @Override
+    public List<ProviderTrack> getAlbumTracks(String providerResourceId) {
+        List<JsonApiLinkage> items = collectTrackLinkages(client.albumItems(providerResourceId));
+        ResourceIndex index = hydrateTracks(items);
+        return items.stream()
+                .map(l -> index.get(TYPE_TRACKS, l.id().id())
+                        .map(r -> mapper.toTrack(r, index).withPosition(l.metaInt("volumeNumber"), l.metaInt("trackNumber"))))
+                .flatMap(Optional::stream)
+                .toList();
+    }
+
+    /** Every track the artist appears on, own releases and features alike; no album positions (those come from the album sync). */
+    @Override
+    public List<ProviderTrack> getArtistTracks(String providerResourceId) {
+        List<JsonApiLinkage> items = collectTrackLinkages(client.artistTracks(providerResourceId, properties.artistTracksCollapseBy()));
+        ResourceIndex index = hydrateTracks(items);
+        return items.stream()
+                .map(l -> index.get(TYPE_TRACKS, l.id().id()).map(r -> mapper.toTrack(r, index)))
+                .flatMap(Optional::stream)
+                .toList();
+    }
+
+    /** Walks every page of a cursor-chained relationship (necessarily sequential), keeping only track linkages. */
+    private List<JsonApiLinkage> collectTrackLinkages(Optional<JsonApiDocument> first) {
+        if (first.isEmpty()) return List.of();
+        List<JsonApiLinkage> items = new ArrayList<>();
+        JsonApiDocument page = first.get();
+        while (true) {
+            page.dataLinkages().stream().filter(l -> TYPE_TRACKS.equals(l.id().type())).forEach(items::add);
+            Optional<String> next = page.nextLink();
+            if (next.isEmpty()) break;
+            page = client.page(next.get());
+        }
+        return items;
+    }
+
+    /**
+     * Relationship pages inline tracks with attributes only, no relationships — so the full track
+     * records are batch-fetched (concurrently), then their albums/artists on top.
+     */
+    private ResourceIndex hydrateTracks(List<JsonApiLinkage> items) {
+        ResourceIndex index = new ResourceIndex();
+        if (items.isEmpty()) return index;
+        Set<String> ids = items.stream().map(l -> l.id().id()).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (List<String> batch : TidalHydrator.chunks(ids, properties.batchSize())) {
+            futures.add(CompletableFuture.runAsync(() -> index.add(client.tracksByIds(batch, TidalIncludes.TRACK), objectMapper), executor));
+        }
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        hydrateAlbumsAndArtists(index);
+        return index;
     }
 
     @Override

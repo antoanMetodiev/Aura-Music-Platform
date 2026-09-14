@@ -46,12 +46,14 @@ public class TidalApiClient {
     private final RestClient restClient;
     private final TidalAuthClient auth;
     private final TidalProperties properties;
+    private final TidalRequestThrottle throttle;
     private final RetryTemplate retry;
     private final CircuitBreaker circuitBreaker;
 
     public TidalApiClient(RestClient.Builder builder,
                           TidalAuthClient auth,
                           TidalProperties properties,
+                          TidalRequestThrottle throttle,
                           CircuitBreakerFactory<?, ?> circuitBreakerFactory) {
         this.restClient = builder.clone()
                 .baseUrl(properties.apiBaseUrl())
@@ -59,12 +61,15 @@ public class TidalApiClient {
                 .build();
         this.auth = auth;
         this.properties = properties;
+        this.throttle = throttle;
+        // A 429 pauses the throttle for TIDAL's Retry-After, so the retry itself only needs a
+        // small delay of its own — the real wait happens in throttle.acquire().
         this.retry = new RetryTemplate(RetryPolicy.builder()
-                .maxRetries(2)
-                .delay(Duration.ofMillis(250))
+                .maxRetries(5)
+                .delay(Duration.ofMillis(500))
                 .multiplier(2.0)
-                .maxDelay(Duration.ofSeconds(2))
-                .jitter(Duration.ofMillis(100))
+                .maxDelay(Duration.ofSeconds(4))
+                .jitter(Duration.ofMillis(200))
                 .includes(TransientTidalException.class)
                 .build());
         this.circuitBreaker = circuitBreakerFactory.create("tidal");
@@ -79,6 +84,15 @@ public class TidalApiClient {
         params.put("countryCode", List.of(properties.countryCode()));
         params.put("include", List.of(String.join(",", include)));
         return get("/searchResults", params).orElseGet(() -> new JsonApiDocument(null, List.of(), null));
+    }
+
+    /**
+     * Follows a JSON:API cursor link exactly as TIDAL handed it to us (already a relative,
+     * query-encoded path such as {@code /searchResults/…/relationships/tracks?page[cursor]=…}).
+     */
+    public JsonApiDocument page(String relativeLink) {
+        URI uri = URI.create(properties.apiBaseUrl() + relativeLink);
+        return get(uri).orElseGet(() -> new JsonApiDocument(null, List.of(), null));
     }
 
     public Optional<JsonApiDocument> track(String id, Collection<String> include) {
@@ -99,6 +113,30 @@ public class TidalApiClient {
 
     public Optional<JsonApiDocument> album(String id, Collection<String> include) {
         return get("/albums/" + encodePath(id), withCountryAndInclude(include));
+    }
+
+    /**
+     * GET /albums/{id}/relationships/items — the album's ordered track/video linkages, each with
+     * {@code meta.volumeNumber}/{@code meta.trackNumber}. First page only; follow {@link #page} for the rest.
+     */
+    public Optional<JsonApiDocument> albumItems(String albumId) {
+        Map<String, List<String>> params = new LinkedHashMap<>();
+        params.put("countryCode", List.of(properties.countryCode()));
+        params.put("include", List.of("items"));
+        return get("/albums/" + encodePath(albumId) + "/relationships/items", params);
+    }
+
+    /**
+     * GET /artists/{id}/relationships/tracks — every track the artist appears on (own releases and
+     * features). First page only; follow {@link #page} for the rest. {@code collapseBy} is TIDAL's
+     * {@code FINGERPRINT} (one entry per distinct recording) or {@code NONE} (every release of it).
+     */
+    public Optional<JsonApiDocument> artistTracks(String artistId, String collapseBy) {
+        Map<String, List<String>> params = new LinkedHashMap<>();
+        params.put("countryCode", List.of(properties.countryCode()));
+        params.put("collapseBy", List.of(collapseBy));
+        params.put("include", List.of("tracks"));
+        return get("/artists/" + encodePath(artistId) + "/relationships/tracks", params);
     }
 
     public JsonApiDocument albumsByIds(Collection<String> ids, Collection<String> include) {
@@ -127,7 +165,10 @@ public class TidalApiClient {
     }
 
     private Optional<JsonApiDocument> get(String path, Map<String, List<String>> params) {
-        URI uri = buildUri(path, params);
+        return get(buildUri(path, params));
+    }
+
+    private Optional<JsonApiDocument> get(URI uri) {
         try {
             return circuitBreaker.run(() -> {
                 try {
@@ -148,27 +189,61 @@ public class TidalApiClient {
 
     private Optional<JsonApiDocument> doGet(URI uri) {
         try {
+            throttle.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ProviderUnavailableException(Provider.TIDAL, e);
+        }
+        try {
+            return doGetThrottled(uri);
+        } finally {
+            throttle.release();
+        }
+    }
+
+    private Optional<JsonApiDocument> doGetThrottled(URI uri) {
+        TidalAuthClient.Token token = auth.accessToken();
+        try {
             JsonApiDocument doc = restClient.get()
                     .uri(uri)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + auth.accessToken())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token.value())
                     .retrieve()
                     .body(JsonApiDocument.class);
+            throttle.succeeded();
             return Optional.ofNullable(doc);
         } catch (HttpClientErrorException e) {
             HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
             if (status == HttpStatus.NOT_FOUND) return Optional.empty();
             if (status == HttpStatus.UNAUTHORIZED) {
-                auth.invalidate();
+                auth.invalidate(token.credentials());
                 throw new TransientTidalException("401 from TIDAL, token invalidated", e);
             }
             if (status == HttpStatus.TOO_MANY_REQUESTS) {
-                log.warn("TIDAL rate limit hit for {}", uri.getPath());
+                Duration retryAfter = retryAfter(e.getResponseHeaders());
+                log.warn("TIDAL rate limit hit for {}, pausing {}", uri.getPath(), retryAfter);
+                throttle.rateLimited(retryAfter);
+                // With several keys configured the retry goes out on the next one; with one key
+                // the token stays valid — re-fetching it would just be another request.
+                auth.switchKeyIfPossible(token.credentials(), "429 rate limited");
                 throw new TransientTidalException("429 from TIDAL", e);
             }
             throw new TidalApiException("TIDAL rejected request " + uri.getPath() + ": " + e.getStatusCode(), e);
         } catch (HttpServerErrorException | ResourceAccessException e) {
             throw new TransientTidalException("TIDAL transient failure for " + uri.getPath(), e);
         }
+    }
+
+    /** TIDAL sends {@code Retry-After} in seconds; fall back to a few seconds when it's missing or malformed. */
+    private static Duration retryAfter(HttpHeaders headers) {
+        String value = headers == null ? null : headers.getFirst(HttpHeaders.RETRY_AFTER);
+        if (value != null) {
+            try {
+                return Duration.ofSeconds(Math.max(1, Long.parseLong(value.trim())));
+            } catch (NumberFormatException ignored) {
+                // date-formatted Retry-After — not worth parsing, use the default
+            }
+        }
+        return Duration.ofSeconds(4);
     }
 
     private URI buildUri(String path, Map<String, List<String>> params) {

@@ -2,6 +2,8 @@ package com.aura.catalog.adapter.persistence;
 
 import com.aura.catalog.adapter.persistence.repository.AlbumRepository;
 import com.aura.catalog.adapter.persistence.repository.ArtistRepository;
+import com.aura.catalog.adapter.persistence.repository.CatalogBatchWriter;
+import com.aura.catalog.adapter.persistence.repository.LocalSearchRepository;
 import com.aura.catalog.adapter.persistence.repository.SearchResultRepository;
 import com.aura.catalog.adapter.persistence.repository.TrackRepository;
 import com.aura.catalog.domain.model.Album;
@@ -14,6 +16,7 @@ import com.aura.catalog.domain.port.CatalogStore;
 import com.aura.catalog.domain.port.ProviderAlbum;
 import com.aura.catalog.domain.port.ProviderArtist;
 import com.aura.catalog.domain.port.ProviderTrack;
+import com.aura.catalog.domain.port.UpsertedBatch;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
@@ -33,13 +36,18 @@ public class JdbcCatalogStore implements CatalogStore {
     private final AlbumRepository albums;
     private final ArtistRepository artists;
     private final SearchResultRepository searchResults;
+    private final CatalogBatchWriter batchWriter;
+    private final LocalSearchRepository localSearch;
 
     public JdbcCatalogStore(TrackRepository tracks, AlbumRepository albums, ArtistRepository artists,
-                            SearchResultRepository searchResults) {
+                            SearchResultRepository searchResults, CatalogBatchWriter batchWriter,
+                            LocalSearchRepository localSearch) {
+        this.localSearch = localSearch;
         this.tracks = tracks;
         this.albums = albums;
         this.artists = artists;
         this.searchResults = searchResults;
+        this.batchWriter = batchWriter;
     }
 
     @Override
@@ -68,6 +76,16 @@ public class JdbcCatalogStore implements CatalogStore {
     }
 
     @Override
+    public List<Track> findTracksByAlbumId(UUID albumId) {
+        return tracks.findByAlbumId(albumId);
+    }
+
+    @Override
+    public void markAlbumTracksSynced(UUID albumId) {
+        albums.markTracksSynced(albumId);
+    }
+
+    @Override
     public Optional<Artist> findArtistById(UUID id) {
         return artists.findById(id);
     }
@@ -79,17 +97,22 @@ public class JdbcCatalogStore implements CatalogStore {
 
     @Override
     public Track upsertTrack(ProviderTrack track) {
-        return tracks.upsert(track);
+        return batchWriter.upsert(List.of(track), List.of(), List.of()).tracks().getFirst();
     }
 
     @Override
     public Album upsertAlbum(ProviderAlbum album) {
-        return albums.upsert(album);
+        return batchWriter.upsert(List.of(), List.of(album), List.of()).albums().getFirst();
     }
 
     @Override
     public Artist upsertArtist(ProviderArtist artist) {
-        return artists.upsert(artist);
+        return batchWriter.upsert(List.of(), List.of(), List.of(artist)).artists().getFirst();
+    }
+
+    @Override
+    public UpsertedBatch upsertBatch(List<ProviderTrack> trackList, List<ProviderAlbum> albumList, List<ProviderArtist> artistList) {
+        return batchWriter.upsert(trackList, albumList, artistList);
     }
 
     @Override
@@ -115,5 +138,20 @@ public class JdbcCatalogStore implements CatalogStore {
     @Override
     public void saveCachedSearch(String normalizedQuery, SearchType type, List<UUID> entityIds) {
         searchResults.save(normalizedQuery, type, entityIds);
+    }
+
+    @Override
+    public List<Track> searchTracksLocally(String query, int limit) {
+        return tracks.findByIds(localSearch.tracks(query, limit));
+    }
+
+    @Override
+    public List<Album> searchAlbumsLocally(String query, int limit) {
+        return albums.findByIds(localSearch.albums(query, limit));
+    }
+
+    @Override
+    public List<Artist> searchArtistsLocally(String query, int limit) {
+        return artists.findByIds(localSearch.artists(query, limit));
     }
 }

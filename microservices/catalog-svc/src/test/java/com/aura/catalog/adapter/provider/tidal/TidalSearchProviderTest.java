@@ -30,7 +30,7 @@ class TidalSearchProviderTest {
             "https://openapi.tidal.com/v2", "https://auth.tidal.com/v1/oauth2/token",
             "US", Duration.ofSeconds(60), 20
     );
-    private final TidalSearchProvider provider = new TidalSearchProvider(client, mapper, properties, objectMapper);
+    private final TidalSearchProvider provider = new TidalSearchProvider(client, mapper, properties, objectMapper, java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
 
     @Test
     void search_preservesRelevanceOrderAndHydratesAlbumArtwork() {

@@ -28,6 +28,11 @@ public interface CatalogStore {
 
     Optional<Album> findAlbumByProviderRef(ProviderReference ref);
 
+    /** In album play order (volume, then track number); tracks with no known position come last. */
+    List<Track> findTracksByAlbumId(UUID albumId);
+
+    void markAlbumTracksSynced(UUID albumId);
+
     Optional<Artist> findArtistById(UUID id);
 
     Optional<Artist> findArtistByProviderRef(ProviderReference ref);
@@ -37,6 +42,9 @@ public interface CatalogStore {
     Album upsertAlbum(ProviderAlbum album);
 
     Artist upsertArtist(ProviderArtist artist);
+
+    /** Persists a whole provider result set in a fixed handful of statements — see {@code CatalogBatchWriter}. */
+    UpsertedBatch upsertBatch(List<ProviderTrack> tracks, List<ProviderAlbum> albums, List<ProviderArtist> artists);
 
     // ── Batch reads (input order preserved, unknown ids skipped) ──────────────────────────
 
@@ -51,4 +59,12 @@ public interface CatalogStore {
     Optional<CachedSearch> findCachedSearch(String normalizedQuery, SearchType type);
 
     void saveCachedSearch(String normalizedQuery, SearchType type, List<UUID> entityIds);
+
+    // ── Local full-text search over our own catalog (ranked, hydrated) ─────────────────────
+
+    List<Track> searchTracksLocally(String query, int limit);
+
+    List<Album> searchAlbumsLocally(String query, int limit);
+
+    List<Artist> searchArtistsLocally(String query, int limit);
 }
