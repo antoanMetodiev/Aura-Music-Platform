@@ -13,6 +13,8 @@ interface UiState {
   rightPanelOpen: boolean;
   rightPanelWidth: number;
   rightPanelTab: RightPanelTab;
+  /** Now Playing panel shows the (monochrome) video instead of the artwork. */
+  nowPlayingVideo: boolean;
   mobilePlayerExpanded: boolean;
   /** True while a panel edge is being dragged — panels drop their width transition so they track the pointer. */
   resizing: boolean;
@@ -25,6 +27,7 @@ interface UiActions {
   setRightPanelWidth: (width: number) => void;
   openRightPanel: (tab: RightPanelTab) => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
+  setNowPlayingVideo: (video: boolean) => void;
   setMobilePlayerExpanded: (open: boolean) => void;
   setResizing: (resizing: boolean) => void;
 }
@@ -39,6 +42,7 @@ export const useUiStore = create<UiState & UiActions>()(
       rightPanelOpen: true,
       rightPanelWidth: RIGHT_PANEL_SIZE.default,
       rightPanelTab: "friends",
+      nowPlayingVideo: false,
       mobilePlayerExpanded: false,
       resizing: false,
 
@@ -58,6 +62,7 @@ export const useUiStore = create<UiState & UiActions>()(
         set({ rightPanelOpen: true, rightPanelTab: tab });
       },
       setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
+      setNowPlayingVideo: (video) => set({ nowPlayingVideo: video }),
       setMobilePlayerExpanded: (open) => set({ mobilePlayerExpanded: open }),
       setResizing: (resizing) => set({ resizing }),
     }),
@@ -69,6 +74,7 @@ export const useUiStore = create<UiState & UiActions>()(
         rightPanelOpen: s.rightPanelOpen,
         rightPanelWidth: s.rightPanelWidth,
         rightPanelTab: s.rightPanelTab,
+        nowPlayingVideo: s.nowPlayingVideo,
       }),
       // Rehydrated after mount (see UiStateHydrator) so the server-rendered layout and the first
       // client render agree; the persisted sizes are applied a frame later.

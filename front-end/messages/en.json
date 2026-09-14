@@ -105,7 +105,11 @@
     "activityPlaylistCreated": "<name></name> created playlist <playlist></playlist>",
     "activityFriendAccepted": "<name></name> is now your friend",
     "resize": "Resize panel",
-    "resizeHint": "Drag to resize · double-click to reset"
+    "resizeHint": "Drag to resize · double-click to reset",
+    "surface": "Now playing view",
+    "surfaceArtwork": "Artwork",
+    "surfaceVideo": "Video",
+    "videoBadge": "Video"
   },
   "presence": {
     "listening": "Listening now",

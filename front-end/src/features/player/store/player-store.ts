@@ -2,6 +2,8 @@ import { create } from "zustand";
 import type { Track } from "@/types/catalog";
 
 export type RepeatMode = "off" | "all" | "one";
+/** What the underlying video player is actually doing right now (as opposed to what the user asked for). */
+export type EngineState = "idle" | "playing" | "paused" | "buffering";
 
 interface PlayerState {
   current: Track | null;
@@ -19,6 +21,7 @@ interface PlayerState {
   muted: boolean;
   shuffle: boolean;
   repeat: RepeatMode;
+  engineState: EngineState;
 }
 
 interface PlayerActions {
@@ -34,6 +37,8 @@ interface PlayerActions {
   cycleRepeat: () => void;
   /** Internal: called by the playback adapter's progress ticks. */
   _tick: (positionMs: number) => void;
+  /** Internal: the playback adapter reports the real player state (drives the video surface overlay). */
+  _setEngineState: (state: EngineState) => void;
 }
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => ({
@@ -46,6 +51,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   muted: false,
   shuffle: false,
   repeat: "off",
+  engineState: "idle",
 
   play: (track, queue) => {
     if (track) {
@@ -91,6 +97,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     }
     set({ positionMs });
   },
+  _setEngineState: (engineState) => set({ engineState }),
 }));
 
 /**

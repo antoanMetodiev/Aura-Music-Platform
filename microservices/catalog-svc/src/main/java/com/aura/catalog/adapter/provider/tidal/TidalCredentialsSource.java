@@ -10,12 +10,14 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Which TIDAL client credentials to use right now. Enabled rows of {@code catalog.tidal_api_keys}
- * win over the env-configured pair; with several rows the service rotates through them in
- * {@code priority} order, and {@link #penalize} benches a key that just got rate-limited or
- * rejected so the next call goes out on a different one.
+ * Which TIDAL client credentials to use right now. {@code catalog.tidal_api_keys} is the source of
+ * truth: every call picks one of its enabled, un-benched rows <em>at random</em>, so load spreads
+ * evenly over however many keys are in there. The env-configured pair is only a bootstrap — on the
+ * first start it is inserted as a row (label {@code env}) and never read again while the table has
+ * keys. {@link #penalize} benches a key that just got rate-limited or rejected for a few minutes.
  */
 @Component
 public class TidalCredentialsSource {
@@ -36,7 +38,6 @@ public class TidalCredentialsSource {
 
     private volatile List<Credentials> pool = List.of();
     private volatile Instant loadedAt = Instant.EPOCH;
-    private volatile int cursor = 0;
 
     public TidalCredentialsSource(JdbcClient jdbc, TidalProperties properties, Clock clock) {
         this.jdbc = jdbc;
@@ -44,9 +45,10 @@ public class TidalCredentialsSource {
         this.clock = clock;
     }
 
+    /** A random member of the active pool — a fresh pick on every call. */
     public Credentials current() {
         List<Credentials> active = activePool();
-        return active.get(Math.floorMod(cursor, active.size()));
+        return active.get(ThreadLocalRandom.current().nextInt(active.size()));
     }
 
     /** Moves to the next key and benches the current one for a while. No-op with a single key. */
@@ -59,9 +61,8 @@ public class TidalCredentialsSource {
             loadedAt = Instant.EPOCH;
         }
         List<Credentials> active = activePool();
-        if (active.size() > 1) {
-            cursor++;
-            log.warn("TIDAL key '{}' benched ({}), switching to '{}'", failed.label(), reason, current().label());
+        if (active.stream().anyMatch(c -> !c.equals(failed))) {
+            log.warn("TIDAL key '{}' benched for {} ({}); {} key(s) remain in rotation", failed.label(), PENALTY, reason, active.size());
         } else {
             log.debug("TIDAL key '{}' failed ({}), no other key to switch to", failed.label(), reason);
         }
@@ -85,6 +86,7 @@ public class TidalCredentialsSource {
 
     private synchronized void reload() {
         if (!clock.instant().isAfter(loadedAt.plus(RELOAD_INTERVAL))) return;
+        seedFromEnvIfEmpty();
         record Row(Credentials credentials, boolean benched) {
         }
         List<Row> enabled = jdbc.sql("""
@@ -101,15 +103,29 @@ public class TidalCredentialsSource {
         List<Credentials> fromDb = enabled.stream().filter(r -> !r.benched()).map(Row::credentials).toList();
         if (fromDb.isEmpty()) fromDb = enabled.stream().map(Row::credentials).toList();
 
-        if (!fromDb.isEmpty()) {
-            pool = fromDb;
-        } else if (properties.clientId() != null && !properties.clientId().isBlank()
-                && properties.clientSecret() != null && !properties.clientSecret().isBlank()) {
-            pool = List.of(new Credentials(null, "env", properties.clientId(), properties.clientSecret()));
-        } else {
+        if (fromDb.isEmpty()) {
             throw new IllegalStateException(
                     "No TIDAL credentials: add a row to catalog.tidal_api_keys or set TIDAL_CLIENT_ID/TIDAL_CLIENT_SECRET");
         }
+        pool = fromDb;
         loadedAt = clock.instant();
+    }
+
+    /** First start: the env pair becomes the first row, so the table is the single source of truth from then on. */
+    private void seedFromEnvIfEmpty() {
+        if (properties.clientId() == null || properties.clientId().isBlank()
+                || properties.clientSecret() == null || properties.clientSecret().isBlank()) return;
+        long count = jdbc.sql("SELECT count(*) FROM catalog.tidal_api_keys").query(Long.class).single();
+        if (count > 0) return;
+        jdbc.sql("""
+                        INSERT INTO catalog.tidal_api_keys (id, label, client_id, client_secret)
+                        VALUES (:id, 'env', :clientId, :clientSecret)
+                        ON CONFLICT (client_id) DO NOTHING
+                        """)
+                .param("id", UUID.randomUUID())
+                .param("clientId", properties.clientId())
+                .param("clientSecret", properties.clientSecret())
+                .update();
+        log.info("Seeded catalog.tidal_api_keys with the TIDAL_CLIENT_ID from the environment");
     }
 }

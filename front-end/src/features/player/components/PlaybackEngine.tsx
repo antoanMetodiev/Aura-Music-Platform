@@ -1,11 +1,28 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useUiStore } from "@/lib/store/ui-store";
 import { resolvePlaybackSource } from "../api/playbackApi";
+import { useVideoSurfaceStore } from "../store/video-surface-store";
+import { VideoSurfaceOverlay } from "./VideoSurfaceOverlay";
 import { createYouTubePlayer, loadYouTubeIframeApi, YouTubePlayerState, type YouTubePlayer } from "../lib/youtubeIframeApi";
 import { usePlayerStore } from "../store/player-store";
 
 const HOST_ELEMENT_ID = "aura-youtube-player-host";
+/**
+ * How much larger than its box the iframe is drawn when shown as video. The overflow is clipped,
+ * which crops away YouTube's own top title bar and bottom control/suggestion strips — only the
+ * picture itself remains.
+ */
+const VIDEO_CROP_ZOOM = 1.4;
+
+function nearestScrollContainer(el: HTMLElement): HTMLElement | null {
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if (overflowY === "auto" || overflowY === "scroll") return node;
+  }
+  return null;
+}
 
 /**
  * Mounted once in the app shell. Drives real playback through YouTube's official IFrame Player API
@@ -71,7 +88,20 @@ export function PlaybackEngine() {
                 player.setVolume(Math.round(currentVolume * 100));
               }
             }
+            usePlayerStore.getState()._setEngineState(
+              event.data === YouTubePlayerState.PLAYING ? "playing"
+                : event.data === YouTubePlayerState.BUFFERING ? "buffering"
+                : event.data === YouTubePlayerState.PAUSED ? "paused"
+                : "idle",
+            );
             if (event.data === YouTubePlayerState.ENDED) usePlayerStore.getState().next();
+          },
+          // 100 = removed/private, 101/150 = embedding disabled by the owner. Nothing we can do for
+          // this track — move on, like a skipped unavailable song.
+          onError: (event) => {
+            console.warn("YouTube player error", event.data);
+            usePlayerStore.getState()._setEngineState("idle");
+            usePlayerStore.getState().next();
           },
         },
       });
@@ -107,8 +137,15 @@ export function PlaybackEngine() {
         // The user may have already skipped again while this was in flight.
         if (loadedTrackIdRef.current !== current.id) return;
         const player = playerRef.current;
-        if (!source || !player) {
-          usePlayerStore.getState().pause();
+        if (!player) return;
+        if (!source) {
+          // No confident source for this track (Project-Info.md §18: better silence than the wrong
+          // song). Like Spotify, skip to the next track in the queue; stop if there is none.
+          const store = usePlayerStore.getState();
+          const queue = store.queue;
+          const index = queue.findIndex((t) => t.id === current.id);
+          if (index !== -1 && index < queue.length - 1) store.next();
+          else store.pause();
           return;
         }
         pendingUnmuteRef.current = true;
@@ -194,11 +231,65 @@ export function PlaybackEngine() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // Video surface: while the Now Playing panel asks for video, keep the iframe pinned over the box
+  // it registered (measured every frame — panels resize, the page scrolls). Otherwise park it
+  // off-screen at 1x1. The iframe is never moved in the DOM (that would reload it and cut the
+  // audio); only the wrapper's position changes.
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const slot = useVideoSurfaceStore((s) => s.slot);
+  const videoWanted = useUiStore((s) => s.nowPlayingVideo);
+  const showVideo = videoWanted && !!slot && !!current;
+
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const iframe = document.getElementById(HOST_ELEMENT_ID);
+    if (!showVideo || !slot) {
+      Object.assign(wrapper.style, { left: "auto", right: "0px", top: "auto", bottom: "0px", width: "1px", height: "1px", opacity: "0", clipPath: "none" });
+      if (iframe) Object.assign(iframe.style, { position: "absolute", width: "1px", height: "1px", left: "0px", top: "0px" });
+      return;
+    }
+    // The panel scrolls; a fixed wrapper doesn't. Clip it to the scroll container's visible box so
+    // the video slides under the panel header instead of floating over it.
+    const scroller = nearestScrollContainer(slot);
+    let frame = 0;
+    const place = () => {
+      const r = slot.getBoundingClientRect();
+      const v = scroller ? scroller.getBoundingClientRect() : r;
+      const clip = {
+        top: Math.max(0, v.top - r.top),
+        right: Math.max(0, r.right - v.right),
+        bottom: Math.max(0, r.bottom - v.bottom),
+        left: Math.max(0, v.left - r.left),
+      };
+      const hidden = clip.top >= r.height || clip.bottom >= r.height || clip.left >= r.width || clip.right >= r.width;
+      Object.assign(wrapper.style, {
+        left: `${r.left}px`, top: `${r.top}px`, right: "auto", bottom: "auto",
+        width: `${r.width}px`, height: `${r.height}px`,
+        opacity: hidden ? "0" : "1",
+        clipPath: `inset(${clip.top}px ${clip.right}px ${clip.bottom}px ${clip.left}px round 0.5rem)`,
+      });
+      const target = document.getElementById(HOST_ELEMENT_ID);
+      if (target) {
+        const h = r.height * VIDEO_CROP_ZOOM;
+        const w = Math.max(h * (16 / 9), r.width * VIDEO_CROP_ZOOM);
+        Object.assign(target.style, { position: "absolute", width: `${w}px`, height: `${h}px`, left: `${(r.width - w) / 2}px`, top: `${(r.height - h) / 2}px` });
+      }
+      frame = requestAnimationFrame(place);
+    };
+    place();
+    return () => cancelAnimationFrame(frame);
+  }, [showVideo, slot]);
+
   return (
     <div
-      id={HOST_ELEMENT_ID}
+      ref={wrapperRef}
       aria-hidden
-      className="pointer-events-none fixed bottom-0 right-0 size-px overflow-hidden opacity-0"
-    />
+      className="pointer-events-none fixed bottom-0 right-0 z-30 size-px overflow-hidden rounded-lg bg-black opacity-0 [filter:grayscale(1)_contrast(1.08)]"
+    >
+      {/* Replaced by the YouTube iframe (same id) once the API is ready; sized/cropped from the effect above. */}
+      <div id={HOST_ELEMENT_ID} className="absolute" />
+      {showVideo && <VideoSurfaceOverlay />}
+    </div>
   );
 }

@@ -105,7 +105,11 @@
     "activityPlaylistCreated": "<name></name> създаде плейлист <playlist></playlist>",
     "activityFriendAccepted": "<name></name> вече е твой приятел",
     "resize": "Промени ширината на панела",
-    "resizeHint": "Влачи за ширина · двоен клик за връщане"
+    "resizeHint": "Влачи за ширина · двоен клик за връщане",
+    "surface": "Изглед на „Сега слушаш“",
+    "surfaceArtwork": "Обложка",
+    "surfaceVideo": "Видео",
+    "videoBadge": "Видео"
   },
   "presence": {
     "listening": "Слуша сега",

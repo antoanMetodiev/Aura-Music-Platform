@@ -1,14 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
-import { Heart, Music2, Share2 } from "lucide-react";
+import { useCallback, useEffect, useMemo } from "react";
+import { Clapperboard, Heart, ImageIcon, Music2, Share2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { routes } from "@/config/routes";
 import { joinArtists } from "@/lib/utils/format";
 import { Button } from "@/components/ui/button";
 import { ArtworkImage } from "@/components/common/ArtworkImage";
+import { cn } from "@/lib/utils";
+import { useUiStore } from "@/lib/store/ui-store";
 import { getUpNext, usePlayerStore } from "../store/player-store";
+import { useVideoSurfaceStore } from "../store/video-surface-store";
 
 /** Right-panel "Now Playing" tab. Big artwork, meta, source badge, up next. */
 export function NowPlayingPanel() {
@@ -18,6 +21,14 @@ export function NowPlayingPanel() {
   const queue = usePlayerStore((s) => s.queue);
   const upNext = useMemo(() => getUpNext(queue, current), [queue, current]);
   const play = usePlayerStore((s) => s.play);
+  const video = useUiStore((s) => s.nowPlayingVideo);
+  const setVideo = useUiStore((s) => s.setNowPlayingVideo);
+  const setSlot = useVideoSurfaceStore((s) => s.setSlot);
+
+  // The video box only exists while "video" is chosen; register it so PlaybackEngine can pin the
+  // (single, app-wide) YouTube frame over it, and unregister the moment it goes away.
+  const slotRef = useCallback((el: HTMLDivElement | null) => setSlot(el), [setSlot]);
+  useEffect(() => () => setSlot(null), [setSlot]);
 
   if (!current) {
     return (
@@ -36,14 +47,47 @@ export function NowPlayingPanel() {
   return (
     <div className="flex flex-col gap-5 p-4">
       <div className="relative">
-        <ArtworkImage
-          artwork={current.artwork}
-          alt={current.album.title}
-          seed={current.id}
-          sizes="320px"
-          priority
-          className="aspect-square w-full rounded-lg shadow-[0_24px_60px_-20px_rgba(0,0,0,0.8)]"
-        />
+        {video ? (
+          <div
+            ref={slotRef}
+            role="img"
+            aria-label={current.title}
+            className="aspect-square w-full rounded-lg bg-black shadow-[0_24px_60px_-20px_rgba(0,0,0,0.8)]"
+          />
+        ) : (
+          <ArtworkImage
+            artwork={current.artwork}
+            alt={current.album.title}
+            seed={current.id}
+            sizes="320px"
+            priority
+            className="aspect-square w-full rounded-lg shadow-[0_24px_60px_-20px_rgba(0,0,0,0.8)]"
+          />
+        )}
+      </div>
+
+      {/* Artwork / video switch — the video is the greyscale, non-interactive YouTube frame. */}
+      <div role="group" aria-label={t("surface")} className="flex gap-1 rounded-lg bg-elevated/60 p-1">
+        {(
+          [
+            { id: false, key: "surfaceArtwork", icon: ImageIcon },
+            { id: true, key: "surfaceVideo", icon: Clapperboard },
+          ] as const
+        ).map(({ id, key, icon: Icon }) => (
+          <button
+            key={String(id)}
+            type="button"
+            aria-pressed={video === id}
+            onClick={() => setVideo(id)}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-2 rounded-md py-1.5 text-xs font-medium transition-colors",
+              video === id ? "bg-active text-foreground" : "text-muted-foreground hover:bg-hover hover:text-foreground",
+            )}
+          >
+            <Icon className="size-3.5" />
+            {t(key)}
+          </button>
+        ))}
       </div>
 
       <div className="flex items-start gap-3">
