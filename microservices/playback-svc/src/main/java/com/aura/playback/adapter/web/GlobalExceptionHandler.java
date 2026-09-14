@@ -48,6 +48,13 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_GATEWAY, "CATALOG_UNAVAILABLE", "The music catalog is currently unavailable");
     }
 
+    @ExceptionHandler(YouTubeApiClient.QuotaExceededException.class)
+    public ResponseEntity<ApiError> quotaExhausted(YouTubeApiClient.QuotaExceededException e) {
+        log.warn("YouTube daily quota exhausted on every key: {}", e.getMessage());
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "PLAYBACK_QUOTA_EXHAUSTED",
+                "The playback source provider's daily quota is exhausted; new tracks can be resolved again after the daily reset");
+    }
+
     @ExceptionHandler(YouTubeApiClient.YouTubeApiException.class)
     public ResponseEntity<ApiError> providerRejectedRequest(YouTubeApiClient.YouTubeApiException e) {
         log.error("YouTube rejected a request: {}", e.getMessage());

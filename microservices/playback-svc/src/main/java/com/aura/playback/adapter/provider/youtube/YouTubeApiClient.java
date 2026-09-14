@@ -97,13 +97,13 @@ public class YouTubeApiClient {
             return getWithKey(path, params, type, key, uriForLogging);
         } catch (QuotaExceededException e) {
             // Daily quota gone on this key — one retry on the next key, if there is one.
-            if (!keys.markQuotaExhausted(key)) throw new YouTubeApiException(e.getMessage(), e.getCause());
+            if (!keys.markQuotaExhausted(key)) throw e;
             YouTubeApiKeySource.ApiKey next = keys.current();
             try {
                 return getWithKey(path, params, type, next, uriForLogging);
             } catch (QuotaExceededException again) {
                 keys.markQuotaExhausted(next);
-                throw new YouTubeApiException(again.getMessage(), again.getCause());
+                throw again;
             }
         }
     }
@@ -118,8 +118,11 @@ public class YouTubeApiClient {
                 try {
                     return retry.execute(() -> doGet(uri, uriForLogging, type));
                 } catch (RetryException e) {
-                    log.warn("YouTube retries exhausted for {}", uriForLogging, e.getLastException());
-                    throw new PlaybackProviderUnavailableException(PlaybackProvider.YOUTUBE, e.getLastException());
+                    // RetryTemplate wraps even non-retryable failures; our own classifications must survive.
+                    Throwable last = e.getLastException();
+                    if (last instanceof QuotaExceededException || last instanceof YouTubeApiException) throw (RuntimeException) last;
+                    log.warn("YouTube retries exhausted for {}", uriForLogging, last);
+                    throw new PlaybackProviderUnavailableException(PlaybackProvider.YOUTUBE, last);
                 }
             });
             keys.markUsed(key);
@@ -127,6 +130,11 @@ public class YouTubeApiClient {
         } catch (PlaybackProviderUnavailableException | YouTubeApiException | QuotaExceededException e) {
             throw e;
         } catch (RuntimeException e) {
+            // The circuit breaker wraps whatever the supplier threw (NoFallbackAvailableException);
+            // our own classifications must come back out intact.
+            Throwable cause = e.getCause();
+            if (cause instanceof QuotaExceededException || cause instanceof YouTubeApiException
+                    || cause instanceof PlaybackProviderUnavailableException) throw (RuntimeException) cause;
             log.warn("Unexpected failure calling YouTube for {}", uriForLogging, e);
             throw new PlaybackProviderUnavailableException(PlaybackProvider.YOUTUBE, e);
         }
@@ -138,11 +146,13 @@ public class YouTubeApiClient {
             return java.util.Optional.ofNullable(body);
         } catch (HttpClientErrorException e) {
             HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
+            String body = e.getResponseBodyAsString();
+            // Google reports a spent *daily* quota as 403 quotaExceeded on some endpoints and as
+            // 429 "Quota exceeded … per day" on others — both mean this key is done until the reset.
+            if (isDailyQuotaExhausted(status, body)) {
+                throw new QuotaExceededException("YouTube daily quota exhausted for " + uriForLogging.getPath(), e);
+            }
             if (status == HttpStatus.FORBIDDEN) {
-                String body = e.getResponseBodyAsString();
-                if (body != null && (body.contains("quotaExceeded") || body.contains("dailyLimitExceeded"))) {
-                    throw new QuotaExceededException("YouTube daily quota exhausted for " + uriForLogging.getPath(), e);
-                }
                 throw new YouTubeApiException(
                         "YouTube rejected request " + uriForLogging.getPath()
                                 + " with 403 — check API key restrictions and remaining quota", e);
@@ -155,6 +165,13 @@ public class YouTubeApiClient {
         } catch (HttpServerErrorException | ResourceAccessException e) {
             throw new TransientYouTubeException("YouTube transient failure for " + uriForLogging.getPath(), e);
         }
+    }
+
+    private static boolean isDailyQuotaExhausted(HttpStatus status, String body) {
+        if (body == null) return false;
+        if (status == HttpStatus.FORBIDDEN) return body.contains("quotaExceeded") || body.contains("dailyLimitExceeded");
+        if (status == HttpStatus.TOO_MANY_REQUESTS) return body.contains("per day") || body.contains("quotaExceeded");
+        return false;
     }
 
     private URI buildUri(String path, Map<String, List<String>> params) {
@@ -175,8 +192,8 @@ public class YouTubeApiClient {
         }
     }
 
-    /** The key's daily quota is spent — handled by rotating keys in {@link #get}, never retried on the same key. */
-    static class QuotaExceededException extends RuntimeException {
+    /** Every key's daily quota is spent — surfaces as 503 PLAYBACK_QUOTA_EXHAUSTED until YouTube's midnight-Pacific reset. */
+    public static class QuotaExceededException extends RuntimeException {
         QuotaExceededException(String message, Throwable cause) {
             super(message, cause);
         }

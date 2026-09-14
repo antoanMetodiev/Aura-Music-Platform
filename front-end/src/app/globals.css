@@ -62,18 +62,19 @@
 
 /*
  * AURA design tokens — see FRONTEND.md §2.
- * The app is dark-only by design: deep navy → black, white text, cool gray secondary,
- * deep blue accent. `:root` and `.dark` are intentionally identical.
+ * The app is dark-only by design: true black ground with neutral dark greys for surfaces, white
+ * text, cool gray secondary, deep blue accent. `:root` and `.dark` are intentionally identical.
  */
 :root,
 .dark {
   /* surfaces */
-  --background: #070a12; /* page ground: near-black navy */
-  --foreground: #f5f7fa;
-  --panel: #0d1220; /* sidebar / main / right panel */
-  --elevated: #141b2e; /* cards, popovers, hover rows */
-  --hover: #1b2439;
-  --active: #22304d;
+  --background: #000000; /* page ground: black (the body paints --gradient-app over it) */
+  --foreground: #f5f6f8;
+  /* Panels are slightly translucent so the app gradient breathes through them. */
+  --panel: rgba(14, 14, 16, 0.7); /* sidebar / main / right panel */
+  --elevated: #1a1a1c; /* cards, popovers, hover rows */
+  --hover: #232326;
+  --active: #2c2c30;
 
   --card: var(--elevated);
   --card-foreground: var(--foreground);
@@ -89,23 +90,23 @@
   --secondary: var(--elevated);
   --secondary-foreground: var(--foreground);
   --muted: var(--elevated);
-  --muted-foreground: #9aa6bf; /* cool gray */
-  --subtle-foreground: #5f6b85;
+  --muted-foreground: #a1a7b3; /* cool gray */
+  --subtle-foreground: #6b7080;
   --accent: var(--hover);
   --accent-foreground: var(--foreground);
   --destructive: #e5484d;
   --success: #3dd68c;
 
-  --border: #1c2438;
-  --border-strong: #2a3550;
-  --input: #1c2438;
+  --border: #232326;
+  --border-strong: #35353a;
+  --input: #232326;
   --ring: #2f6bff;
 
   --chart-1: #2f6bff;
   --chart-2: #4c82ff;
   --chart-3: #1e3f8f;
-  --chart-4: #9aa6bf;
-  --chart-5: #5f6b85;
+  --chart-4: #a1a7b3;
+  --chart-5: #6b7080;
 
   --radius: 0.625rem;
 
@@ -118,8 +119,17 @@
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
 
-  /* hero / highlight gradient: deep navy → dark rich blue → black */
-  --gradient-hero: linear-gradient(180deg, #0b2a5b 0%, #0a1a3c 45%, #070a12 100%);
+  /* hero / highlight gradient: a faint blue-tinted charcoal fading into the black ground */
+  --gradient-hero: linear-gradient(180deg, #1a2335 0%, #0e1117 45%, transparent 100%);
+
+  /*
+   * App ground: black with a cool blue glow bleeding in from the top-left and a warm-grey lift at the
+   * bottom-right, so the black never reads flat. Panels sit on top at ~78% so it shows through.
+   */
+  --gradient-app:
+    radial-gradient(120% 70% at 12% -12%, rgba(47, 107, 255, 0.32) 0%, rgba(47, 107, 255, 0.09) 38%, transparent 65%),
+    radial-gradient(70% 60% at 100% 105%, rgba(110, 100, 140, 0.22) 0%, transparent 62%),
+    linear-gradient(160deg, #0b0b0e 0%, #050506 50%, #000000 100%);
 }
 
 @layer base {
@@ -128,6 +138,8 @@
   }
   body {
     @apply bg-background text-foreground;
+    background-image: var(--gradient-app);
+    background-attachment: fixed;
   }
   button:not(:disabled),
   [role="button"]:not(:disabled) {

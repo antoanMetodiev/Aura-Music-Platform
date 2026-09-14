@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
+import { toast } from "sonner";
+import { ApiError } from "@/lib/api/client";
 import { useUiStore } from "@/lib/store/ui-store";
 import { resolvePlaybackSource } from "../api/playbackApi";
 import { useVideoSurfaceStore } from "../store/video-surface-store";
@@ -39,6 +42,7 @@ function nearestScrollContainer(el: HTMLElement): HTMLElement | null {
  * need a fresh gesture, so this sidesteps the restriction without ever being audible-then-cut.
  */
 export function PlaybackEngine() {
+  const t = useTranslations("player");
   const [isReady, setIsReady] = useState(false);
   const playerRef = useRef<YouTubePlayer | null>(null);
   /** Track whose source we last asked for — guards against a stale resolve landing after another skip. */
@@ -141,6 +145,7 @@ export function PlaybackEngine() {
         if (!source) {
           // No confident source for this track (Project-Info.md §18: better silence than the wrong
           // song). Like Spotify, skip to the next track in the queue; stop if there is none.
+          toast(t("unavailableSkipped", { title: current.title }));
           const store = usePlayerStore.getState();
           const queue = store.queue;
           const index = queue.findIndex((t) => t.id === current.id);
@@ -156,10 +161,13 @@ export function PlaybackEngine() {
         if (usePlayerStore.getState().isPlaying) player.playVideo();
         else player.pauseVideo();
       })
-      .catch(() => {
-        if (loadedTrackIdRef.current === current.id) usePlayerStore.getState().pause();
+      .catch((error: unknown) => {
+        if (loadedTrackIdRef.current !== current.id) return;
+        usePlayerStore.getState().pause();
+        const code = error instanceof ApiError ? error.code : "UNKNOWN_ERROR";
+        toast.error(code === "PLAYBACK_QUOTA_EXHAUSTED" ? t("quotaExhausted") : t("playbackFailed"));
       });
-  }, [current, isReady]);
+  }, [current, isReady, t]);
 
   // Play / pause — only once the iframe holds the current track; during a resolve the load above
   // decides what to do when the video lands.

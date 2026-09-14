@@ -174,13 +174,20 @@ public class TidalApiClient {
                 try {
                     return retry.execute(() -> doGet(uri));
                 } catch (RetryException e) {
-                    log.warn("TIDAL retries exhausted for {}", uri, e.getLastException());
-                    throw new ProviderUnavailableException(Provider.TIDAL, e.getLastException());
+                    // RetryTemplate wraps even non-retryable failures; a 4xx TIDAL rejected must stay one.
+                    Throwable last = e.getLastException();
+                    if (last instanceof TidalApiException rejected) throw rejected;
+                    log.warn("TIDAL retries exhausted for {}", uri, last);
+                    throw new ProviderUnavailableException(Provider.TIDAL, last);
                 }
             });
-        } catch (ProviderUnavailableException e) {
+        } catch (ProviderUnavailableException | TidalApiException e) {
             throw e;
         } catch (RuntimeException e) {
+            // The circuit breaker wraps whatever the supplier threw (NoFallbackAvailableException);
+            // our own classifications must come back out intact.
+            Throwable cause = e.getCause();
+            if (cause instanceof ProviderUnavailableException || cause instanceof TidalApiException) throw (RuntimeException) cause;
             // Circuit open (CallNotPermittedException) or any other breaker-level failure.
             log.warn("Unexpected failure calling TIDAL for {}", uri, e);
             throw new ProviderUnavailableException(Provider.TIDAL, e);

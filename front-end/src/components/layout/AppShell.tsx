@@ -5,6 +5,7 @@ import { MiniPlayer } from "@/features/player/components/MiniPlayer";
 import type { PlaylistSummary } from "@/types/catalog";
 import type { ActivityItem, FriendPresence, UserSummary } from "@/types/social";
 import { MobileBottomNav } from "./MobileBottomNav";
+import { Toaster } from "@/components/ui/sonner";
 import { UiStateHydrator } from "./ResizeHandle";
 import { RightPanel } from "./RightPanel";
 import { Sidebar } from "./Sidebar";
@@ -32,6 +33,7 @@ export function AppShell({ user, playlists, presence, activity, unreadNotificati
     <div className="flex h-dvh flex-col bg-background">
       <PlaybackEngine />
       <UiStateHydrator />
+      <Toaster position="bottom-center" offset={96} />
 
       <div className="flex min-h-0 flex-1 p-2 max-md:p-0">
         <Sidebar playlists={playlists} />

@@ -135,7 +135,10 @@
     "friends": "Friends",
     "nowPlaying": "Now Playing",
     "saveToLiked": "Save to Liked Songs",
-    "nothingPlaying": "Nothing playing"
+    "nothingPlaying": "Nothing playing",
+    "unavailableSkipped": "“{title}” has no playable version — skipped",
+    "quotaExhausted": "New songs can't be played right now: the daily playback quota is used up. It resets at 10:00.",
+    "playbackFailed": "Couldn't start playback. Try again in a moment."
   },
   "home": {
     "title": "Home",
