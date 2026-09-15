@@ -88,16 +88,30 @@ public class CatalogController {
     }
 
     /**
-     * Keyset walk over the whole catalog in insertion order (service-to-service, for workers that
-     * need to visit every track). Returns up to {@code limit} tracks strictly after the cursor;
-     * the caller continues from the last item's {@code createdAt}/{@code id}.
+     * Keyset walk over the whole catalog (service-to-service, for workers that need to visit every
+     * track). Returns up to {@code limit} tracks strictly after the cursor. Two orders:
+     * <ul>
+     *   <li>default — insertion order; continue from the last item's {@code createdAt}/{@code id};</li>
+     *   <li>{@code order=popularity} — most popular first; continue from the last item's
+     *       {@code popularity}/{@code id} via {@code popularityBelow}/{@code afterId}.</li>
+     * </ul>
      */
     @GetMapping("/tracks/scan")
     public List<TrackResponse> scanTracks(
+            @RequestParam(value = "order", required = false) String order,
             @RequestParam(value = "createdAfter", required = false) java.time.Instant createdAfter,
+            @RequestParam(value = "popularityBelow", required = false) Double popularityBelow,
             @RequestParam(value = "afterId", required = false) UUID afterId,
             @RequestParam(value = "limit", required = false) Integer limit
     ) {
+        if ("popularity".equalsIgnoreCase(order)) {
+            // Popularity is 0..1, so anything above 1 with the max UUID means "from the very top".
+            return catalogService.scanTracksByPopularity(
+                            popularityBelow == null ? 2.0 : popularityBelow,
+                            afterId == null ? new UUID(-1L, -1L) : afterId,
+                            limit == null ? 50 : limit)
+                    .stream().map(mapper::toResponse).toList();
+        }
         return catalogService.scanTracks(
                         createdAfter == null ? java.time.Instant.EPOCH : createdAfter,
                         afterId == null ? new UUID(0L, 0L) : afterId,

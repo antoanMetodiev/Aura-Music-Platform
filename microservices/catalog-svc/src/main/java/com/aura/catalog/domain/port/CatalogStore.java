@@ -40,6 +40,9 @@ public interface CatalogStore {
     /** Keyset page over every track in insertion order, strictly after {@code (createdAfter, afterId)}. */
     List<Track> findTracksCreatedAfter(java.time.Instant createdAfter, UUID afterId, int limit);
 
+    /** Keyset page over every track most-popular-first, strictly after {@code (popularityBelow, afterId)} in {@code (popularity DESC, id DESC)} order. */
+    List<Track> findTracksByPopularityBelow(double popularityBelow, UUID afterId, int limit);
+
     void markAlbumTracksSynced(UUID albumId);
 
     Optional<Artist> findArtistById(UUID id);

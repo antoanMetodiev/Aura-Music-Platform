@@ -48,23 +48,24 @@ public class CatalogClient implements CatalogTrackLookup {
     }
 
     @Override
-    public List<CatalogTrackLookup.ScannedTrack> scan(java.time.Instant createdAfter, UUID afterId, int limit) {
+    public List<CatalogTrackLookup.ScannedTrack> scanByPopularity(double popularityBelow, UUID afterId, int limit) {
         try {
             return circuitBreaker.run(() -> {
                 List<CatalogTrackResponse> page = restClient.get()
                         .uri(b -> b.path("/api/v1/catalog/tracks/scan")
-                                .queryParam("createdAfter", createdAfter.toString())
+                                .queryParam("order", "popularity")
+                                .queryParam("popularityBelow", popularityBelow)
                                 .queryParam("afterId", afterId.toString())
                                 .queryParam("limit", limit)
                                 .build())
                         .retrieve()
                         .body(new org.springframework.core.ParameterizedTypeReference<List<CatalogTrackResponse>>() {});
                 return page == null ? List.<CatalogTrackLookup.ScannedTrack>of() : page.stream()
-                        .map(r -> new CatalogTrackLookup.ScannedTrack(toCanonicalTrack(r), r.createdAt()))
+                        .map(r -> new CatalogTrackLookup.ScannedTrack(toCanonicalTrack(r), r.popularity()))
                         .toList();
             });
         } catch (RuntimeException e) {
-            log.warn("Unable to scan catalog-svc after {}/{}", createdAfter, afterId, e);
+            log.warn("Unable to scan catalog-svc below popularity {} / after {}", popularityBelow, afterId, e);
             throw new CatalogServiceUnavailableException(e);
         }
     }

@@ -11,6 +11,8 @@ import com.aura.playback.domain.model.VideoCandidate;
 import com.aura.playback.domain.port.CatalogTrackLookup;
 import com.aura.playback.domain.port.PlaybackSourceStore;
 import com.aura.playback.domain.port.VideoSearchProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -33,6 +35,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Service
 public class PlaybackResolverService {
+
+    private static final Logger log = LoggerFactory.getLogger(PlaybackResolverService.class);
 
     private final PlaybackSourceStore store;
     private final CatalogTrackLookup catalogLookup;
@@ -89,6 +93,18 @@ public class PlaybackResolverService {
 
     private PlaybackSource doResolve(UUID trackId) {
         CanonicalTrack track = catalogLookup.findTrack(trackId).orElseThrow(() -> new TrackNotFoundException(trackId));
+
+        // Same ISRC = same recording: a video already verified for a re-release of this track is this
+        // track's video too, and costs nothing — half the catalog has such a sibling.
+        if (track.isrc() != null && !track.isrc().isBlank()) {
+            Optional<PlaybackSource> sibling = store.findVerifiedByIsrc(track.isrc(), PlaybackProvider.YOUTUBE);
+            if (sibling.isPresent()) {
+                log.info("Playback source for '{}' ({}) copied from ISRC sibling track {} -> YouTube {}",
+                        track.title(), track.primaryArtist(), sibling.get().trackId(), sibling.get().providerResourceId());
+                return store.upsert(VideoHintService.copyForTrack(sibling.get(), track, clock.instant()));
+            }
+        }
+
         List<VideoCandidate> candidates = videoSearchProvider.search(track);
         List<ScoredCandidate> ranked = matcher.rank(track, candidates);
 
@@ -96,34 +112,34 @@ public class PlaybackResolverService {
         UUID id = UUID.randomUUID();
 
         if (ranked.isEmpty()) {
-            return store.upsert(nonePlaceholder(id, trackId, 0, now));
+            return store.upsert(nonePlaceholder(id, track, 0, now));
         }
 
         ScoredCandidate best = ranked.get(0);
         if (best.score() >= thresholds.highConfidenceThreshold()) {
-            return store.upsert(fromCandidate(id, trackId, best, MatchMethod.AUTOMATIC, true, now));
+            return store.upsert(fromCandidate(id, track, best, MatchMethod.AUTOMATIC, true, now));
         }
         if (best.score() >= thresholds.mediumConfidenceThreshold()) {
             // Stored, not thrown away — a future manual-verification flow can promote this later.
-            return store.upsert(fromCandidate(id, trackId, best, MatchMethod.CANDIDATE, false, now));
+            return store.upsert(fromCandidate(id, track, best, MatchMethod.CANDIDATE, false, now));
         }
-        return store.upsert(nonePlaceholder(id, trackId, best.score(), now));
+        return store.upsert(nonePlaceholder(id, track, best.score(), now));
     }
 
     private boolean isStale(Instant updatedAt) {
         return updatedAt == null || updatedAt.plus(resolverProperties.retryUnverifiedAfter()).isBefore(clock.instant());
     }
 
-    private static PlaybackSource fromCandidate(UUID id, UUID trackId, ScoredCandidate scored, MatchMethod method,
+    private static PlaybackSource fromCandidate(UUID id, CanonicalTrack track, ScoredCandidate scored, MatchMethod method,
                                                  boolean verified, Instant now) {
         VideoCandidate candidate = scored.candidate();
-        return new PlaybackSource(id, trackId, PlaybackProvider.YOUTUBE, candidate.providerResourceId(),
+        return new PlaybackSource(id, track.id(), PlaybackProvider.YOUTUBE, track.isrc(), candidate.providerResourceId(),
                 candidate.title(), candidate.channelId(), candidate.channelTitle(), candidate.durationMs(),
                 scored.score(), method, verified, verified ? now : null, now, now);
     }
 
-    private static PlaybackSource nonePlaceholder(UUID id, UUID trackId, int bestScoreSeen, Instant now) {
-        return new PlaybackSource(id, trackId, PlaybackProvider.YOUTUBE, null, null, null, null, 0L,
+    private static PlaybackSource nonePlaceholder(UUID id, CanonicalTrack track, int bestScoreSeen, Instant now) {
+        return new PlaybackSource(id, track.id(), PlaybackProvider.YOUTUBE, track.isrc(), null, null, null, null, 0L,
                 bestScoreSeen, MatchMethod.NONE, false, null, now, now);
     }
 }

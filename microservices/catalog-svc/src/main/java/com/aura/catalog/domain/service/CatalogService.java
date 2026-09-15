@@ -333,6 +333,11 @@ public class CatalogService {
         return store.findTracksCreatedAfter(createdAfter, afterId, Math.min(Math.max(limit, 1), 200));
     }
 
+    /** Same walk, most popular first — for consumers that spend a budget per track and should spend it on what gets played. */
+    public List<Track> scanTracksByPopularity(double popularityBelow, UUID afterId, int limit) {
+        return store.findTracksByPopularityBelow(popularityBelow, afterId, Math.min(Math.max(limit, 1), 200));
+    }
+
     public List<Track> findTracksByIsrc(String isrc) {
         List<Track> local = store.findTracksByIsrc(isrc);
         if (!local.isEmpty()) return local;

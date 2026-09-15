@@ -41,6 +41,11 @@ music:
     musicbrainz:
       enabled: ${MUSICBRAINZ_ENABLED:true}
       user-agent: ${MUSICBRAINZ_USER_AGENT:Aura-Music-Platform/0.1 (dev; antoan.0418@gmail.com)}
+    # Second in the video-hint chain (by artist + title, no ISRC needed); 60 req/min with a personal token.
+    discogs:
+      enabled: ${DISCOGS_ENABLED:true}
+      token: ${DISCOGS_TOKEN:}
+      user-agent: ${DISCOGS_USER_AGENT:Aura-Music-Platform/0.1 (dev; antoan.0418@gmail.com)}
 
 aura:
   # Talks to catalog-svc directly (service-to-service), not through the gateway.
@@ -61,13 +66,15 @@ playback:
     # A track that resolved to nothing confident is looked up again after this long — YouTube
     # uploads change, and the matcher may have improved.
     retry-unverified-after: 7d
-  # Background walk over the whole catalog: MusicBrainz (by ISRC) may already know the YouTube video,
-  # which then costs 1 quota unit to validate instead of 100 for a search. Every track is asked
-  # about exactly once, whatever the outcome.
+  # Background walk over the whole catalog, most popular first: MusicBrainz (by ISRC) may already know
+  # the YouTube video, which then costs 1 quota unit to validate instead of 100 for a search. Every
+  # track is asked about exactly once, whatever the outcome; tracks sharing an ISRC with one already
+  # checked reuse its answer without any call.
   video-hints:
     enabled: ${VIDEO_HINTS_ENABLED:true}
     page-size: 25
     delay-between-pages: 1s
+    delay-between-quiet-pages: 100ms
     idle-after-full-pass: 10m
     backoff-on-outage: 5m
 
@@ -82,6 +89,13 @@ resilience4j:
         wait-duration-in-open-state: 30s
         permitted-number-of-calls-in-half-open-state: 5
       musicbrainz:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 3
+      discogs:
         sliding-window-type: COUNT_BASED
         sliding-window-size: 20
         minimum-number-of-calls: 10
@@ -106,6 +120,9 @@ resilience4j:
         timeout-duration: 8s
       # MusicBrainz calls wait their turn (1/s) and retry on "busy" inside the breaker — far longer than one HTTP call.
       musicbrainz:
+        timeout-duration: 60s
+      # Up to three paced Discogs calls per track (master search, release search, page).
+      discogs:
         timeout-duration: 60s
 
 management:

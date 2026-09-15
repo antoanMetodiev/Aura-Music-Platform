@@ -33,6 +33,7 @@ public class CatalogWebMapper {
                 toResponse(track.artwork()),
                 track.volumeNumber(),
                 track.trackNumber(),
+                track.popularity(),
                 track.createdAt()
         );
     }

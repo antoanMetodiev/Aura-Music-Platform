@@ -8,6 +8,8 @@ public record PlaybackSource(
         UUID id,
         UUID trackId,
         PlaybackProvider provider,
+        /** The recording's ISRC at resolve time (nullable) — lets tracks that are re-releases of the same recording share this source. */
+        String isrc,
         String providerResourceId,
         String title,
         String channelId,

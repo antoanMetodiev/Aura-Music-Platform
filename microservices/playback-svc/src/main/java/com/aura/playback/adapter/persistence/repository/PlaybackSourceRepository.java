@@ -39,14 +39,29 @@ public class PlaybackSourceRepository implements PlaybackSourceStore {
     }
 
     @Override
+    public Optional<PlaybackSource> findVerifiedByIsrc(String isrc, PlaybackProvider provider) {
+        return jdbc.sql("""
+                        SELECT * FROM playback.track_sources
+                        WHERE isrc = :isrc AND provider = :provider AND is_verified
+                        ORDER BY match_score DESC, verified_at DESC
+                        LIMIT 1
+                        """)
+                .param("isrc", isrc)
+                .param("provider", provider.name())
+                .query(PlaybackSourceRepository::mapRow)
+                .optional();
+    }
+
+    @Override
     public PlaybackSource upsert(PlaybackSource source) {
         return jdbc.sql("""
                         INSERT INTO playback.track_sources
-                            (id, track_id, provider, provider_resource_id, title, channel_id, channel_title,
+                            (id, track_id, provider, isrc, provider_resource_id, title, channel_id, channel_title,
                              duration_ms, match_score, match_method, is_verified, verified_at, created_at, updated_at)
-                        VALUES (:id, :trackId, :provider, :providerResourceId, :title, :channelId, :channelTitle,
+                        VALUES (:id, :trackId, :provider, :isrc, :providerResourceId, :title, :channelId, :channelTitle,
                                 :durationMs, :matchScore, :matchMethod, :isVerified, :verifiedAt, :createdAt, :updatedAt)
                         ON CONFLICT (track_id, provider) DO UPDATE SET
+                            isrc = COALESCE(EXCLUDED.isrc, playback.track_sources.isrc),
                             provider_resource_id = EXCLUDED.provider_resource_id,
                             title = EXCLUDED.title,
                             channel_id = EXCLUDED.channel_id,
@@ -62,6 +77,7 @@ public class PlaybackSourceRepository implements PlaybackSourceStore {
                 .param("id", source.id())
                 .param("trackId", source.trackId())
                 .param("provider", source.provider().name())
+                .param("isrc", source.isrc())
                 .param("providerResourceId", source.providerResourceId())
                 .param("title", source.title())
                 .param("channelId", source.channelId())
@@ -82,6 +98,7 @@ public class PlaybackSourceRepository implements PlaybackSourceStore {
                 (UUID) rs.getObject("id"),
                 (UUID) rs.getObject("track_id"),
                 PlaybackProvider.valueOf(rs.getString("provider")),
+                rs.getString("isrc"),
                 rs.getString("provider_resource_id"),
                 rs.getString("title"),
                 rs.getString("channel_id"),

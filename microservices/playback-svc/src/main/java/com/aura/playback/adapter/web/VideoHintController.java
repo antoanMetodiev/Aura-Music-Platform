@@ -19,7 +19,7 @@ import java.util.List;
 public class VideoHintController {
 
     public record WorkerStatus(boolean enabled, boolean running, Instant startedAt, long pagesSinceStart,
-                               long matchedSinceStart, String lastError) {
+                               long matchedSinceStart, long reusedSinceStart, String lastError) {
     }
 
     public record StatusResponse(WorkerStatus worker, VideoHintStore.Stats hints, VideoHintStore.Cursor cursor,
@@ -41,7 +41,7 @@ public class VideoHintController {
         VideoHintWorker w = worker.getIfAvailable();
         WorkerStatus status = new WorkerStatus(properties.enabled(), w != null && w.isRunning(),
                 w == null ? null : w.startedAt(), w == null ? 0 : w.pagesSinceStart(),
-                w == null ? 0 : w.matchedSinceStart(), w == null ? null : w.lastError());
+                w == null ? 0 : w.matchedSinceStart(), w == null ? 0 : w.reusedSinceStart(), w == null ? null : w.lastError());
         int limit = recent == null ? 20 : Math.min(Math.max(recent, 1), 200);
         return new StatusResponse(status, service.stats(), service.cursor().orElse(null),
                 service.lastMatched().orElse(null), service.recent(limit));

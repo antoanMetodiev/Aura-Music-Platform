@@ -9,6 +9,11 @@ public enum MatchMethod {
     /** A human picked this source explicitly, overriding whatever the matcher found. */
     MANUAL,
     /**
+     * Copied from another track with the same ISRC whose source was already verified — same recording,
+     * so the same video, without a search or a validation call of its own.
+     */
+    ISRC_SIBLING,
+    /**
      * We searched and found nothing above even the medium threshold. Stored (with a null
      * {@code providerResourceId}) purely so a repeat request doesn't burn YouTube quota re-running
      * a search we already know fails (Project-Info.md §20).

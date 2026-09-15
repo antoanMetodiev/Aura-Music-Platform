@@ -1,7 +1,10 @@
 package com.aura.playback.adapter.provider.musicbrainz;
 
+import com.aura.playback.domain.model.CanonicalTrack;
 import com.aura.playback.domain.model.PlaybackProvider;
 import com.aura.playback.domain.port.KnownVideoLookup;
+import com.aura.playback.domain.port.VideoHintStore.HintSource;
+import org.springframework.core.annotation.Order;
 import com.aura.playback.domain.service.PlaybackProviderUnavailableException;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -35,6 +38,8 @@ import java.util.regex.Pattern;
  * <p>Paced to one call per second (their published limit) and retried a few times when they answer
  * "server busy", which happens routinely under load. Everything else that fails is "unavailable".
  */
+/* First in the chain: keyed by ISRC, so exact by construction — Discogs (by name) is only asked when this has nothing. */
+@Order(1)
 @Component
 @ConditionalOnProperty(prefix = "music.providers.musicbrainz", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class MusicBrainzVideoLookup implements KnownVideoLookup {
@@ -62,7 +67,21 @@ public class MusicBrainzVideoLookup implements KnownVideoLookup {
     }
 
     @Override
-    public Result lookupByIsrc(String isrc) {
+    public HintSource source() {
+        return HintSource.MUSICBRAINZ;
+    }
+
+    @Override
+    public boolean supports(CanonicalTrack track) {
+        return track.isrc() != null && !track.isrc().isBlank();
+    }
+
+    @Override
+    public Result lookup(CanonicalTrack track) {
+        return lookupByIsrc(track.isrc());
+    }
+
+    Result lookupByIsrc(String isrc) {
         URI uri = URI.create(properties.apiBaseUrl() + "/isrc/" + UriUtils.encodePathSegment(isrc, StandardCharsets.UTF_8)
                 + "?inc=url-rels&fmt=json");
         try {

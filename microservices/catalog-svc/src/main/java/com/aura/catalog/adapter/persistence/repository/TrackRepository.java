@@ -79,6 +79,26 @@ public class TrackRepository {
         return findByIds(ids);
     }
 
+    /**
+     * Most-popular-first keyset page, strictly after {@code (popularityBelow, afterId)}. Popularity is a
+     * float that the provider refresh can move, so a row may be skipped or seen twice across pages —
+     * fine for the background walker, which records every visit and repeats the pass anyway.
+     */
+    public List<Track> findByPopularityBelow(double popularityBelow, UUID afterId, int limit) {
+        List<UUID> ids = jdbc.sql("""
+                        SELECT id FROM catalog.tracks
+                        WHERE (popularity, id) < (:popularity, :afterId)
+                        ORDER BY popularity DESC, id DESC
+                        LIMIT :limit
+                        """)
+                .param("popularity", popularityBelow)
+                .param("afterId", afterId)
+                .param("limit", limit)
+                .query(UUID.class)
+                .list();
+        return findByIds(ids);
+    }
+
     /** Every track the artist appears on (main or featured), most popular first. */
     public List<Track> findByArtistId(UUID artistId, int limit) {
         List<UUID> ids = jdbc.sql("""

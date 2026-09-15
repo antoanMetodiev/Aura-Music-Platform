@@ -96,6 +96,11 @@ public class JdbcCatalogStore implements CatalogStore {
     }
 
     @Override
+    public List<Track> findTracksByPopularityBelow(double popularityBelow, UUID afterId, int limit) {
+        return tracks.findByPopularityBelow(popularityBelow, afterId, limit);
+    }
+
+    @Override
     public void markAlbumTracksSynced(UUID albumId) {
         albums.markTracksSynced(albumId);
     }

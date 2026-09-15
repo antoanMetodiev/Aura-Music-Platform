@@ -14,8 +14,10 @@ public record VideoHintProperties(
         @DefaultValue("true") boolean enabled,
         /** Tracks fetched from catalog-svc per step. Each unchecked track with an ISRC costs one MusicBrainz call (~1s). */
         @DefaultValue("25") int pageSize,
-        /** Pause between pages. */
+        /** Pause between pages that made at least one MusicBrainz call. */
         @NotNull @DefaultValue("1s") Duration delayBetweenPages,
+        /** Pause between pages that made none (all tracks already checked or answered from ISRC siblings). */
+        @NotNull @DefaultValue("100ms") Duration delayBetweenQuietPages,
         /** Pause after a full pass over the catalog before starting the next one. */
         @NotNull @DefaultValue("10m") Duration idleAfterFullPass,
         /** Pause when catalog-svc, MusicBrainz or YouTube is unavailable (incl. exhausted quota). */

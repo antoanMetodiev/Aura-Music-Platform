@@ -37,6 +37,7 @@ public class VideoHintWorker {
     private volatile Instant startedAt;
     private volatile long pagesSinceStart;
     private volatile long matchedSinceStart;
+    private volatile long reusedSinceStart;
     private volatile String lastError;
 
     public VideoHintWorker(VideoHintService service, VideoHintProperties properties) {
@@ -67,11 +68,16 @@ public class VideoHintWorker {
                 VideoHintService.PageOutcome outcome = service.processNextPage(properties.pageSize());
                 pagesSinceStart++;
                 matchedSinceStart += outcome.matched();
+                reusedSinceStart += outcome.reused();
                 lastError = null;
                 if (outcome.endOfCatalog()) {
                     log.info("Video hint worker reached the end of the catalog (pass {}), idling {}",
                             outcome.cursor().passes(), properties.idleAfterFullPass());
                     pause = properties.idleAfterFullPass();
+                } else if (outcome.quiet()) {
+                    // Nothing went out to MusicBrainz — only catalog reads and sibling copies — so there is
+                    // no rate limit to respect; this is what lets a restarted pass fly over checked tracks.
+                    pause = properties.delayBetweenQuietPages();
                 } else {
                     pause = properties.delayBetweenPages();
                 }
@@ -108,6 +114,10 @@ public class VideoHintWorker {
 
     public long matchedSinceStart() {
         return matchedSinceStart;
+    }
+
+    public long reusedSinceStart() {
+        return reusedSinceStart;
     }
 
     public String lastError() {

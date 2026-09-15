@@ -14,9 +14,14 @@ public interface CatalogTrackLookup {
 
     Optional<CanonicalTrack> findTrack(UUID trackId);
 
-    /** A page of the whole catalog in insertion order, strictly after the cursor (see {@code ScannedTrack}). */
-    List<ScannedTrack> scan(java.time.Instant createdAfter, UUID afterId, int limit);
+    /**
+     * A page of the whole catalog most-popular-first, strictly after {@code (popularityBelow, afterId)} in
+     * {@code (popularity DESC, id DESC)} order; the caller continues from the last item's
+     * {@code popularity}/{@code id}.
+     */
+    List<ScannedTrack> scanByPopularity(double popularityBelow, UUID afterId, int limit);
 
-    record ScannedTrack(CanonicalTrack track, java.time.Instant createdAt) {
+    /** {@code popularity} is the provider's 0..1 signal — only meaningful as an ordering. */
+    record ScannedTrack(CanonicalTrack track, double popularity) {
     }
 }
