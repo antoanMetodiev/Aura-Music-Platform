@@ -50,7 +50,7 @@
     "bg": "Български"
   },
   "search": {
-    "placeholder": "Search tracks, artists, albums, friends…",
+    "placeholder": "What do you want to listen to?",
     "label": "Search",
     "clear": "Clear search",
     "browseAll": "Browse all",
@@ -80,6 +80,14 @@
       "latino": "Latino",
       "rnb": "R&B",
       "chill": "Chill"
+    },
+    "suggestions": {
+      "label": "Suggestions",
+      "song": "Song",
+      "artist": "Artist",
+      "seeAll": "See all results for “{query}”",
+      "empty": "Nothing in the catalog matches “{query}” yet — press Enter to search everywhere.",
+      "searching": "Searching…"
     }
   },
   "panel": {
@@ -211,5 +219,23 @@
     "track": "Track",
     "playlist": "Playlist",
     "profile": "Profile"
+  },
+  "artist": {
+    "eyebrow": "Artist",
+    "popular": "Popular",
+    "showMore": "Show more",
+    "showLess": "Show less",
+    "discography": "Discography",
+    "noTracks": "No tracks for this artist yet.",
+    "tracksUnavailable": {
+      "title": "Couldn't load this artist's music",
+      "description": "We could not reach the music catalog. Try again in a moment."
+    },
+    "types": {
+      "ALBUM": "Album",
+      "EP": "EP",
+      "SINGLE": "Single",
+      "UNKNOWN": "Release"
+    }
   }
 }

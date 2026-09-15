@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -51,6 +52,15 @@ public class ArtistDiscographyRepository implements DiscographySyncStore {
                 .query((rs, n) -> new PendingArtist((UUID) rs.getObject("id"), rs.getString("name"),
                         new ProviderReference(Provider.TIDAL, rs.getString("provider_resource_id"))))
                 .optional();
+    }
+
+    @Override
+    public Optional<Instant> syncedAt(UUID artistId) {
+        return jdbc.sql("SELECT discography_synced_at FROM catalog.artists WHERE id = :id")
+                .param("id", artistId)
+                .query((rs, n) -> ArtistRepository.toInstant(rs, "discography_synced_at"))
+                .optional()
+                .filter(java.util.Objects::nonNull);
     }
 
     @Override

@@ -3,8 +3,8 @@
  * (`types/catalog.ts`, the same shapes the mock catalog uses). Keeping this conversion in one
  * place means swapping mock data for real data never touches a single component.
  */
-import type { AlbumDto, AlbumSummaryDto, ArtistSummaryDto, ArtworkDto, TrackDto } from "@/types/api";
-import type { Album, AlbumSummary, ArtistSummary, Artwork, Track } from "@/types/catalog";
+import type { AlbumDto, AlbumSummaryDto, ArtistDto, ArtistSummaryDto, ArtworkDto, TrackDto } from "@/types/api";
+import type { Album, AlbumSummary, Artist, ArtistSummary, Artwork, Track } from "@/types/catalog";
 
 const UNKNOWN_ARTIST: ArtistSummary = { id: "unknown-artist", name: "Unknown Artist" };
 const UNKNOWN_ALBUM: AlbumSummary = { id: "unknown-album", title: "Unknown Album", artist: UNKNOWN_ARTIST };
@@ -15,6 +15,10 @@ function toArtwork(dto: ArtworkDto | null | undefined): Artwork | undefined {
 
 export function toArtistSummary(dto: ArtistSummaryDto): ArtistSummary {
   return { id: dto.id, name: dto.name, artwork: toArtwork(dto.artwork) };
+}
+
+export function toArtist(dto: ArtistDto): Artist {
+  return { id: dto.id, name: dto.name, artwork: toArtwork(dto.artwork), popularity: dto.popularity };
 }
 
 export function toAlbumSummary(dto: AlbumSummaryDto): AlbumSummary {

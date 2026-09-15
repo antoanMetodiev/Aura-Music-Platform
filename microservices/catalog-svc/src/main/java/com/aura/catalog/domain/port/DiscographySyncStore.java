@@ -27,6 +27,9 @@ public interface DiscographySyncStore {
      */
     Optional<PendingArtist> claimNext(Duration refreshAfter, Duration retryAfter);
 
+    /** When the artist's discography was last pulled in full; empty if never. */
+    Optional<Instant> syncedAt(UUID artistId);
+
     void markSynced(UUID artistId, int trackCount);
 
     void markFailed(UUID artistId, String error);

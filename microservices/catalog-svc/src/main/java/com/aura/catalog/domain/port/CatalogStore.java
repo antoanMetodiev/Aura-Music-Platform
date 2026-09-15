@@ -31,6 +31,12 @@ public interface CatalogStore {
     /** In album play order (volume, then track number); tracks with no known position come last. */
     List<Track> findTracksByAlbumId(UUID albumId);
 
+    /** Every track the artist appears on, most popular first. */
+    List<Track> findTracksByArtistId(UUID artistId, int limit);
+
+    /** Albums credited to the artist, newest first. */
+    List<Album> findAlbumsByArtistId(UUID artistId);
+
     /** Keyset page over every track in insertion order, strictly after {@code (createdAfter, afterId)}. */
     List<Track> findTracksCreatedAfter(java.time.Instant createdAfter, UUID afterId, int limit);
 
@@ -70,4 +76,10 @@ public interface CatalogStore {
     List<Album> searchAlbumsLocally(String query, int limit);
 
     List<Artist> searchArtistsLocally(String query, int limit);
+
+    // ── Type-ahead over our own catalog (prefix matches first) ─────────────────────────────
+
+    List<Track> suggestTracks(String query, int limit);
+
+    List<Artist> suggestArtists(String query, int limit);
 }

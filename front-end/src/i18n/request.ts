@@ -9,5 +9,8 @@ export default getRequestConfig(async ({ requestLocale }) => {
   return {
     locale,
     messages: (await import(`../../messages/${locale}.json`)).default,
+    // One "now" per request, inherited by NextIntlClientProvider — so relative times ("7м") render
+    // identically on the server and during hydration instead of drifting by the render gap.
+    now: new Date(),
   };
 });

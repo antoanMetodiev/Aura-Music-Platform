@@ -87,6 +87,18 @@ public class AlbumRepository {
         return result;
     }
 
+    /** Albums credited to the artist, newest first. */
+    public List<Album> findByArtistId(UUID artistId) {
+        List<UUID> ids = jdbc.sql("""
+                        SELECT id FROM catalog.albums WHERE artist_id = :artistId
+                        ORDER BY release_date DESC NULLS LAST, title
+                        """)
+                .param("artistId", artistId)
+                .query(UUID.class)
+                .list();
+        return findByIds(ids);
+    }
+
     public void markTracksSynced(UUID albumId) {
         jdbc.sql("UPDATE catalog.albums SET tracks_synced_at = now() WHERE id = :id")
                 .param("id", albumId)

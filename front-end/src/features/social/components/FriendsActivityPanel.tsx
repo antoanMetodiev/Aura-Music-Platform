@@ -69,7 +69,7 @@ function SectionLabel({ children, count }: { children: React.ReactNode; count?: 
 
 function LiveRow({ item }: { item: FriendPresence }) {
   const common = useTranslations("common");
-  const relative = useRelativeTime();
+  const relative = useRelativeTime({ updateInterval: 30_000 });
   const play = usePlayerStore((s) => s.play);
   const track = item.track!;
 
@@ -110,7 +110,7 @@ function LiveRow({ item }: { item: FriendPresence }) {
 
 function ActivityRow({ item }: { item: ActivityItem }) {
   const t = useTranslations("panel");
-  const relative = useRelativeTime();
+  const relative = useRelativeTime({ updateInterval: 30_000 });
   const { user } = item;
 
   const name = () => (

@@ -1,7 +1,7 @@
 import { apiFetch } from "@/lib/api/client";
-import type { AlbumDto, SearchResponseDto, TrackDto } from "@/types/api";
-import type { Album, AlbumSummary, ArtistSummary, Track } from "@/types/catalog";
-import { toAlbum, toAlbumSummary, toArtistSummary, toTrack } from "./catalogMappers";
+import type { AlbumDto, ArtistDto, SearchResponseDto, TrackDto } from "@/types/api";
+import type { Album, AlbumSummary, Artist, ArtistSummary, Track } from "@/types/catalog";
+import { toAlbum, toAlbumSummary, toArtist, toArtistSummary, toTrack } from "./catalogMappers";
 
 export type CatalogSearchType = "tracks" | "albums" | "artists";
 
@@ -39,6 +39,34 @@ export async function searchAlbums(query: string, limit = 10, options: SearchOpt
 export async function searchArtists(query: string, limit = 10, options: SearchOptions = {}): Promise<ArtistSummary[]> {
   const dto = await searchByType(query, "artists", limit, options);
   return dto.artists.map(toArtistSummary);
+}
+
+export interface Suggestions {
+  tracks: Track[];
+  artists: ArtistSummary[];
+}
+
+/** Type-ahead: our own catalog only, prefix matches first, one entry per recording. Fires on every keystroke. */
+export async function suggest(query: string, signal?: AbortSignal): Promise<Suggestions> {
+  const dto = await apiFetch<SearchResponseDto>("/catalog/suggest", { searchParams: { q: query, limit: 5 }, signal });
+  return { tracks: dto.tracks.map(toTrack), artists: dto.artists.map(toArtistSummary) };
+}
+
+/** Local read — instant. Throws an `ApiError` with status 404 for an unknown id. */
+export async function getArtist(id: string): Promise<Artist> {
+  return toArtist(await apiFetch<ArtistDto>(`/catalog/artists/${encodeURIComponent(id)}`));
+}
+
+/** Most popular first, one entry per recording. First open of an artist may pull their discography (a few seconds). */
+export async function getArtistTopTracks(id: string, limit = 10): Promise<Track[]> {
+  const dtos = await apiFetch<TrackDto[]>(`/catalog/artists/${encodeURIComponent(id)}/top-tracks`, { searchParams: { limit } });
+  return dtos.map(toTrack);
+}
+
+/** Albums, EPs and singles credited to the artist, newest first. */
+export async function getArtistAlbums(id: string): Promise<Album[]> {
+  const dtos = await apiFetch<AlbumDto[]>(`/catalog/artists/${encodeURIComponent(id)}/albums`);
+  return dtos.map(toAlbum);
 }
 
 /** Local read — instant. Throws an `ApiError` with status 404 for an unknown id. */

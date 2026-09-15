@@ -9,6 +9,7 @@ import com.aura.catalog.domain.model.SearchResult;
 import com.aura.catalog.domain.model.SearchType;
 import com.aura.catalog.domain.model.Track;
 import com.aura.catalog.domain.port.CatalogStore;
+import com.aura.catalog.domain.port.DiscographySyncStore;
 import com.aura.catalog.domain.port.MusicMetadataProvider;
 import com.aura.catalog.domain.port.MusicSearchProvider;
 import com.aura.catalog.domain.port.ProviderSearchResult;
@@ -55,6 +56,7 @@ public class CatalogService {
     private static final Logger log = LoggerFactory.getLogger(CatalogService.class);
 
     private final CatalogStore store;
+    private final DiscographySyncStore discography;
     private final MusicMetadataProvider metadata;
     private final MusicSearchProvider search;
     private final CatalogProperties properties;
@@ -64,12 +66,14 @@ public class CatalogService {
     private final ConcurrentHashMap<String, CompletableFuture<Void>> refreshing = new ConcurrentHashMap<>();
 
     public CatalogService(CatalogStore store,
+                          DiscographySyncStore discography,
                           MusicMetadataProvider metadata,
                           MusicSearchProvider search,
                           CatalogProperties properties,
                           Clock clock,
                           @AppConfig.HttpIo ExecutorService httpIoExecutor) {
         this.store = store;
+        this.discography = discography;
         this.metadata = metadata;
         this.search = search;
         this.properties = properties;
@@ -160,6 +164,42 @@ public class CatalogService {
                 take(local, SearchType.TRACKS, effectiveLimit),
                 take(local, SearchType.ALBUMS, effectiveLimit),
                 take(local, SearchType.ARTISTS, effectiveLimit));
+    }
+
+    /**
+     * Type-ahead: local catalog only, never a provider call (it runs on every keystroke). Tracks
+     * that are the same recording released several times (singles, compilations, deluxe editions)
+     * collapse to one entry — a dropdown showing "Hello" four times helps nobody.
+     */
+    public SearchResult suggest(String query, int trackLimit, int artistLimit) {
+        String q = query.trim();
+        List<Track> tracks = dedupeReleases(store.suggestTracks(q, trackLimit * 3), trackLimit);
+        List<Artist> artists = dedupeArtists(store.suggestArtists(q, artistLimit * 3), artistLimit);
+        return new SearchResult(q, tracks, List.of(), artists);
+    }
+
+    /** Keeps the first (best-ranked) track per (normalized title, primary artist). */
+    private static List<Track> dedupeReleases(List<Track> tracks, int limit) {
+        Set<String> seen = new java.util.HashSet<>();
+        List<Track> out = new java.util.ArrayList<>();
+        for (Track t : tracks) {
+            String artist = t.primaryArtist() == null ? "" : t.primaryArtist().id().toString();
+            String key = t.title().trim().toLowerCase(Locale.ROOT) + "|" + artist;
+            if (seen.add(key)) out.add(t);
+            if (out.size() == limit) break;
+        }
+        return out;
+    }
+
+    /** Providers list some artists twice (regional duplicates); keep the first per normalized name. */
+    private static List<Artist> dedupeArtists(List<Artist> artists, int limit) {
+        Set<String> seen = new java.util.HashSet<>();
+        List<Artist> out = new java.util.ArrayList<>();
+        for (Artist a : artists) {
+            if (seen.add(a.name().trim().toLowerCase(Locale.ROOT))) out.add(a);
+            if (out.size() == limit) break;
+        }
+        return out;
     }
 
     private Map<SearchType, List<?>> localResults(String query, Set<SearchType> types, int limit) {
@@ -348,6 +388,46 @@ public class CatalogService {
                 .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", id));
         return refreshIfStale(local, local.providerSyncedAt(), local.providerReferences(),
                 ref -> metadata.getArtist(ref.providerResourceId()).map(store::upsertArtist).orElse(local));
+    }
+
+    /**
+     * The artist's most popular tracks, one entry per recording. The first time an artist is
+     * opened before the background sync reached them, their discography is pulled right now
+     * (same call the worker makes) so the page is complete rather than showing the two tracks a
+     * search happened to bring in.
+     */
+    public List<Track> getArtistTopTracks(UUID artistId, int limit) {
+        Artist artist = store.findArtistById(artistId)
+                .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", artistId));
+        ensureDiscography(artist);
+        return dedupeReleases(store.findTracksByArtistId(artistId, limit * 4), limit);
+    }
+
+    /** Albums, EPs and singles credited to the artist, newest first (discography pulled on first open, as above). */
+    public List<Album> getArtistAlbums(UUID artistId) {
+        Artist artist = store.findArtistById(artistId)
+                .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", artistId));
+        ensureDiscography(artist);
+        // Providers carry regional / clean-vs-explicit duplicates of the same release; keep one per (title, date).
+        Set<String> seen = new java.util.HashSet<>();
+        return store.findAlbumsByArtistId(artistId).stream()
+                .filter(al -> seen.add(al.title().trim().toLowerCase(Locale.ROOT) + "|" + al.releaseDate()))
+                .toList();
+    }
+
+    private void ensureDiscography(Artist artist) {
+        if (discography.syncedAt(artist.id()).isPresent()) return;
+        ProviderReference ref = providerRef(artist.providerReferences());
+        if (ref == null) return;
+        try {
+            List<ProviderTrack> tracks = metadata.getArtistTracks(ref.providerResourceId());
+            store.upsertBatch(tracks, List.of(), List.of());
+            discography.markSynced(artist.id(), tracks.size());
+        } catch (ProviderUnavailableException e) {
+            // Serve what we have; the background worker will complete the discography later.
+            log.warn("Provider {} unavailable while pulling discography of '{}', serving local tracks only: {}",
+                    metadata.provider(), artist.name(), e.getMessage());
+        }
     }
 
     public Artist getArtistByProviderRef(ProviderReference ref) {

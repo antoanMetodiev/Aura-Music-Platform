@@ -5,13 +5,13 @@ import type { CatalogSearchType } from "@/features/music/api/catalogApi";
  * "use client" — Next.js treats every export of a client-directive file as a client reference, so a
  * Server Component can't call a function from one directly (RSC boundary), even a pure one.
  */
-export const SEARCH_FILTERS = ["all", "songs", "albums", "artists"] as const;
+/** Albums are deliberately out for now — search is tracks and artists only. */
+export const SEARCH_FILTERS = ["all", "songs", "artists"] as const;
 export type SearchFilter = (typeof SEARCH_FILTERS)[number];
 
 const FILTER_TYPE: Record<SearchFilter, CatalogSearchType | undefined> = {
   all: undefined,
   songs: "tracks",
-  albums: "albums",
   artists: "artists",
 };
 

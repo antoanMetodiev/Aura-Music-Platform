@@ -58,6 +58,20 @@ public class CatalogController {
                 : catalogService.search(query, parsedTypes, limit));
     }
 
+    /** Type-ahead for the search box: local catalog only, tracks + artists, prefix matches first. */
+    @GetMapping("/suggest")
+    public SearchResponse suggest(
+            @RequestParam("q") String query,
+            @RequestParam(value = "limit", required = false) Integer limit
+    ) {
+        if (query == null || query.isBlank()) {
+            throw new IllegalArgumentException("'q' must not be blank");
+        }
+        int tracks = limit == null ? 5 : Math.min(Math.max(limit, 1), 20);
+        int artists = Math.max(2, tracks / 2);
+        return mapper.toResponse(catalogService.suggest(query, tracks, artists));
+    }
+
     @GetMapping("/tracks/{id}")
     public TrackResponse getTrack(@PathVariable UUID id) {
         return mapper.toResponse(catalogService.getTrack(id));
@@ -102,6 +116,18 @@ public class CatalogController {
     @GetMapping("/artists/{id}")
     public ArtistResponse getArtist(@PathVariable UUID id) {
         return mapper.toFullResponse(catalogService.getArtist(id));
+    }
+
+    @GetMapping("/artists/{id}/top-tracks")
+    public List<TrackResponse> getArtistTopTracks(@PathVariable UUID id,
+                                                  @RequestParam(value = "limit", required = false) Integer limit) {
+        int effective = limit == null ? 10 : Math.min(Math.max(limit, 1), 50);
+        return catalogService.getArtistTopTracks(id, effective).stream().map(mapper::toResponse).toList();
+    }
+
+    @GetMapping("/artists/{id}/albums")
+    public List<AlbumResponse> getArtistAlbums(@PathVariable UUID id) {
+        return catalogService.getArtistAlbums(id).stream().map(mapper::toFullResponse).toList();
     }
 
     private static Set<SearchType> parseTypes(List<String> raw) {

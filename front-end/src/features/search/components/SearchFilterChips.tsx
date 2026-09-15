@@ -8,11 +8,10 @@ import { SEARCH_FILTERS, type SearchFilter } from "../lib/searchFilter";
 const FILTER_TYPE_PARAM: Record<SearchFilter, string | undefined> = {
   all: undefined,
   songs: "tracks",
-  albums: "albums",
   artists: "artists",
 };
 
-/** All / Songs / Albums / Artists — updates the `type` search param on the current results page. */
+/** All / Songs / Artists — updates the `type` search param on the current results page. */
 export function SearchFilterChips({ active }: { active: SearchFilter }) {
   const t = useTranslations("search");
   const pathname = usePathname();

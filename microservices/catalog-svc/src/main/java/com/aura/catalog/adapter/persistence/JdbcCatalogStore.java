@@ -81,6 +81,16 @@ public class JdbcCatalogStore implements CatalogStore {
     }
 
     @Override
+    public List<Track> findTracksByArtistId(UUID artistId, int limit) {
+        return tracks.findByArtistId(artistId, limit);
+    }
+
+    @Override
+    public List<Album> findAlbumsByArtistId(UUID artistId) {
+        return albums.findByArtistId(artistId);
+    }
+
+    @Override
     public List<Track> findTracksCreatedAfter(java.time.Instant createdAfter, UUID afterId, int limit) {
         return tracks.findCreatedAfter(createdAfter, afterId, limit);
     }
@@ -158,5 +168,15 @@ public class JdbcCatalogStore implements CatalogStore {
     @Override
     public List<Artist> searchArtistsLocally(String query, int limit) {
         return artists.findByIds(localSearch.artists(query, limit));
+    }
+
+    @Override
+    public List<Track> suggestTracks(String query, int limit) {
+        return tracks.findByIds(localSearch.suggestTracks(query, limit));
+    }
+
+    @Override
+    public List<Artist> suggestArtists(String query, int limit) {
+        return artists.findByIds(localSearch.suggestArtists(query, limit));
     }
 }

@@ -24,6 +24,11 @@ export interface AlbumSummary {
   releaseYear?: number;
 }
 
+export interface Artist extends ArtistSummary {
+  /** 0..1 as reported by the metadata provider. */
+  popularity: number;
+}
+
 export type AlbumType = "ALBUM" | "EP" | "SINGLE" | "UNKNOWN";
 
 export interface Album extends AlbumSummary {

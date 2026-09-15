@@ -79,6 +79,22 @@ public class TrackRepository {
         return findByIds(ids);
     }
 
+    /** Every track the artist appears on (main or featured), most popular first. */
+    public List<Track> findByArtistId(UUID artistId, int limit) {
+        List<UUID> ids = jdbc.sql("""
+                        SELECT t.id FROM catalog.tracks t
+                        JOIN catalog.track_artists ta ON ta.track_id = t.id
+                        WHERE ta.artist_id = :artistId
+                        ORDER BY t.popularity DESC, t.title
+                        LIMIT :limit
+                        """)
+                .param("artistId", artistId)
+                .param("limit", limit)
+                .query(UUID.class)
+                .list();
+        return findByIds(ids);
+    }
+
     public List<Track> findByAlbumId(UUID albumId) {
         List<UUID> ids = jdbc.sql("""
                         SELECT id FROM catalog.tracks WHERE album_id = :albumId

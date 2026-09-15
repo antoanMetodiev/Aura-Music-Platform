@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { Locale } from "@/i18n/routing";
-import { AlbumsSection } from "@/features/search/components/AlbumsSection";
 import { ArtistsSection } from "@/features/search/components/ArtistsSection";
 import { filterFromTypeParam, typeParamFromFilter } from "@/features/search/lib/searchFilter";
 import { SearchFilterChips } from "@/features/search/components/SearchFilterChips";
@@ -39,13 +38,11 @@ export default async function SearchResultsPage({
       {filter === "all" && (
         <div className="flex flex-col gap-8">
           <TopResultAndSongsSection query={query} />
-          <AlbumsSection query={query} limit={10} variant="rail" />
           <ArtistsSection query={query} limit={10} variant="rail" />
         </div>
       )}
 
       {type === "tracks" && <SongsListSection query={query} limit={60} showEmptyState />}
-      {type === "albums" && <AlbumsSection query={query} limit={24} variant="grid" showEmptyState />}
       {type === "artists" && <ArtistsSection query={query} limit={24} variant="grid" showEmptyState />}
     </div>
   );
