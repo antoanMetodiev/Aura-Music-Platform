@@ -1,11 +1,13 @@
 package com.aura.catalog.adapter.web;
 
 import com.aura.catalog.adapter.web.dto.AlbumResponse;
+import com.aura.catalog.adapter.web.dto.ArtistAboutResponse;
 import com.aura.catalog.adapter.web.dto.ArtistResponse;
 import com.aura.catalog.adapter.web.dto.LyricsResponse;
 import com.aura.catalog.adapter.web.dto.SearchResponse;
 import com.aura.catalog.adapter.web.dto.TrackResponse;
 import com.aura.catalog.domain.model.SearchType;
+import com.aura.catalog.domain.service.ArtistAboutService;
 import com.aura.catalog.domain.service.CatalogService;
 import com.aura.catalog.domain.service.LyricsService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,11 +33,14 @@ public class CatalogController {
 
     private final CatalogService catalogService;
     private final LyricsService lyricsService;
+    private final ArtistAboutService artistAboutService;
     private final CatalogWebMapper mapper;
 
-    public CatalogController(CatalogService catalogService, LyricsService lyricsService, CatalogWebMapper mapper) {
+    public CatalogController(CatalogService catalogService, LyricsService lyricsService, ArtistAboutService artistAboutService,
+                             CatalogWebMapper mapper) {
         this.catalogService = catalogService;
         this.lyricsService = lyricsService;
+        this.artistAboutService = artistAboutService;
         this.mapper = mapper;
     }
 
@@ -140,6 +145,17 @@ public class CatalogController {
     @GetMapping("/artists/{id}")
     public ArtistResponse getArtist(@PathVariable UUID id) {
         return mapper.toFullResponse(catalogService.getArtist(id));
+    }
+
+    /**
+     * Biography, tags, similar artists, stats and outside links — gathered lazily from Last.fm and Discogs on
+     * first request. {@code lang} (ISO 639-1) picks the biography language when available, English otherwise.
+     * 502 {@code PROVIDER_UNAVAILABLE} only when nothing is cached and every provider is down.
+     */
+    @GetMapping("/artists/{id}/about")
+    public ArtistAboutResponse getArtistAbout(@PathVariable UUID id,
+                                              @RequestParam(value = "lang", required = false) String lang) {
+        return mapper.toResponse(artistAboutService.getAbout(id, lang));
     }
 
     @GetMapping("/artists/{id}/top-tracks")

@@ -41,7 +41,8 @@ public class LocalSearchRepository {
     }
 
     public List<UUID> artists(String query, int limit) {
-        return run("catalog.artists", ARTIST_HAYSTACK, "id", "popularity", query, limit);
+        // Aliases (provider duplicates, V14) never surface on their own — the canonical row stands for the group.
+        return run("catalog.artists", ARTIST_HAYSTACK, "id", "popularity", "canonical_artist_id IS NULL AND ", query, limit);
     }
 
     // ── Type-ahead ─────────────────────────────────────────────────────────────────────────
@@ -78,7 +79,8 @@ public class LocalSearchRepository {
     public List<UUID> suggestArtists(String query, int limit) {
         List<String> words = words(query);
         if (words.isEmpty()) return List.of();
-        StringBuilder sql = new StringBuilder("SELECT id FROM catalog.artists WHERE ");
+        // Aliases (provider duplicates, V14) never surface on their own — the canonical row stands for the group.
+        StringBuilder sql = new StringBuilder("SELECT id FROM catalog.artists WHERE canonical_artist_id IS NULL AND ");
         for (int i = 0; i < words.size(); i++) {
             sql.append(i == 0 ? "" : " AND ").append("name ILIKE :w").append(i);
         }
@@ -106,10 +108,15 @@ public class LocalSearchRepository {
     }
 
     private List<UUID> run(String from, String haystack, String idColumn, String popularityColumn, String query, int limit) {
+        return run(from, haystack, idColumn, popularityColumn, "", query, limit);
+    }
+
+    /** {@code extraWhere} is prepended to the word conditions (it must end in {@code AND }) when non-empty. */
+    private List<UUID> run(String from, String haystack, String idColumn, String popularityColumn, String extraWhere, String query, int limit) {
         List<String> words = Arrays.stream(query.trim().split("\\s+")).filter(w -> !w.isEmpty()).toList();
         if (words.isEmpty()) return List.of();
 
-        StringBuilder sql = new StringBuilder("SELECT ").append(idColumn).append(" FROM ").append(from).append(" WHERE ");
+        StringBuilder sql = new StringBuilder("SELECT ").append(idColumn).append(" FROM ").append(from).append(" WHERE ").append(extraWhere);
         for (int i = 0; i < words.size(); i++) {
             sql.append(i == 0 ? "" : " AND ").append("(").append(haystack).append(") ILIKE :w").append(i);
         }

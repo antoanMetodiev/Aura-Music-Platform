@@ -73,3 +73,34 @@ export interface PlaybackSource {
   providerResourceId: string;
   playbackType: "embed";
 }
+
+/** Biography, tags, similar artists, stats and outside links for an artist page's "About" (Last.fm + Discogs). */
+export interface ArtistAbout {
+  artistId: string;
+  biography: ArtistBiography | null;
+  listeners: number | null;
+  playcount: number | null;
+  tags: string[];
+  similar: SimilarArtist[];
+  links: ExternalLink[];
+}
+
+export interface ArtistBiography {
+  text: string;
+  /** Who wrote it — shown as a credit with a link (Last.fm text is CC BY-SA). */
+  source: "LASTFM" | "DISCOGS" | string;
+  url: string | null;
+  language: string | null;
+}
+
+/** As the provider names them; `artist` is set when we have that artist in our own catalog. */
+export interface SimilarArtist {
+  name: string;
+  artist: ArtistSummary | null;
+}
+
+/** `type` is a normalized host label (instagram, youtube, website, ...) mapped to an icon. */
+export interface ExternalLink {
+  type: string;
+  url: string;
+}

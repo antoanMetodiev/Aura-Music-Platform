@@ -1,13 +1,14 @@
 import { cache, Suspense } from "react";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Disc3 } from "lucide-react";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { Locale } from "@/i18n/routing";
 import { routes } from "@/config/routes";
 import { ApiError } from "@/lib/api/client";
 import { EmptyState } from "@/components/common/EmptyState";
-import { getArtist, getArtistAlbums, getArtistTopTracks } from "@/features/music/api/catalogApi";
+import { getArtist, getArtistAbout, getArtistAlbums, getArtistTopTracks } from "@/features/music/api/catalogApi";
+import { ArtistAboutSection } from "@/features/music/components/ArtistAboutSection";
 import { ArtistHero } from "@/features/music/components/ArtistHero";
 import { ArtistTopTracks } from "@/features/music/components/ArtistTopTracks";
 import { HorizontalSection } from "@/features/music/components/HorizontalSection";
@@ -40,6 +41,9 @@ export default async function ArtistPage({ params }: PageProps<"/[locale]/artist
   const { locale, artistId } = (await params) as { locale: Locale; artistId: string };
   setRequestLocale(locale);
   const artist = await loadArtist(artistId);
+  // A provider duplicate of an artist resolves to the canonical one (the backend returns its id) —
+  // land on that URL so the page has one address, however the user got here.
+  if (artist.id !== artistId) redirect(routes.artist(artist.id));
 
   return (
     <div className="flex flex-col gap-10 px-3 pt-6 pb-12 sm:px-5 sm:pt-10">
@@ -49,6 +53,9 @@ export default async function ArtistPage({ params }: PageProps<"/[locale]/artist
       </Suspense>
       <Suspense fallback={<MediaRailSkeleton />}>
         <Discography artist={artist} />
+      </Suspense>
+      <Suspense fallback={<AboutSkeleton />}>
+        <About artist={artist} locale={locale} />
       </Suspense>
     </div>
   );
@@ -64,6 +71,30 @@ async function TopTracks({ artist }: { artist: Artist }) {
     return <EmptyState icon={Disc3} title={t("noTracks")} className="min-h-[30vh]" />;
   }
   return <ArtistTopTracks artistId={artist.id} tracks={tracks} />;
+}
+
+/**
+ * Biography, tags, links and similar artists — gathered by the backend from Last.fm/Discogs on the
+ * first open (a couple of seconds, once), then cached. Missing or unreachable = the section simply isn't there.
+ */
+async function About({ artist, locale }: { artist: Artist; locale: Locale }) {
+  const about = await getArtistAbout(artist.id, locale).catch(() => null);
+  if (!about) return null;
+  return <ArtistAboutSection about={about} />;
+}
+
+function AboutSkeleton() {
+  return (
+    <div aria-hidden className="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="flex flex-col gap-3">
+        <span className="h-7 w-40 animate-pulse rounded-md bg-foreground/10" />
+        {[100, 96, 92, 98, 60].map((w, i) => (
+          <span key={i} className="h-4 animate-pulse rounded bg-foreground/10" style={{ width: `${w}%` }} />
+        ))}
+      </div>
+      <span className="h-40 animate-pulse rounded-xl bg-foreground/10" />
+    </div>
+  );
 }
 
 async function Discography({ artist }: { artist: Artist }) {

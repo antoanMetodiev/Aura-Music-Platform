@@ -2,6 +2,7 @@ package com.aura.catalog.adapter.web;
 
 import com.aura.catalog.adapter.web.dto.AlbumResponse;
 import com.aura.catalog.adapter.web.dto.AlbumSummaryResponse;
+import com.aura.catalog.adapter.web.dto.ArtistAboutResponse;
 import com.aura.catalog.adapter.web.dto.ArtistResponse;
 import com.aura.catalog.adapter.web.dto.ArtistSummaryResponse;
 import com.aura.catalog.adapter.web.dto.ArtworkResponse;
@@ -10,6 +11,7 @@ import com.aura.catalog.adapter.web.dto.SearchResponse;
 import com.aura.catalog.adapter.web.dto.TrackResponse;
 import com.aura.catalog.domain.model.Album;
 import com.aura.catalog.domain.model.Artist;
+import com.aura.catalog.domain.model.ArtistAbout;
 import com.aura.catalog.domain.model.Artwork;
 import com.aura.catalog.domain.model.Lyrics;
 import com.aura.catalog.domain.model.SearchResult;
@@ -89,6 +91,21 @@ public class CatalogWebMapper {
                         ? lyrics.synced().stream().map(l -> new LyricsResponse.SyncedLineResponse(l.timeMs(), l.text())).toList()
                         : null,
                 lyrics.hasPlain() ? lyrics.plain() : null
+        );
+    }
+
+    public ArtistAboutResponse toResponse(ArtistAbout about) {
+        ArtistAbout.Biography bio = about.biography();
+        return new ArtistAboutResponse(
+                about.artistId(),
+                bio == null ? null : new ArtistAboutResponse.BiographyResponse(bio.text(), bio.source().name(), bio.url(), bio.language()),
+                about.listeners(),
+                about.playcount(),
+                about.tags(),
+                about.similar().stream()
+                        .map(s -> new ArtistAboutResponse.SimilarArtistResponse(s.name(), s.artist() == null ? null : toSummary(s.artist())))
+                        .toList(),
+                about.links().stream().map(l -> new ArtistAboutResponse.ExternalLinkResponse(l.type(), l.url())).toList()
         );
     }
 }

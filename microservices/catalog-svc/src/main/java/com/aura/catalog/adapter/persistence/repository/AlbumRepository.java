@@ -88,12 +88,14 @@ public class AlbumRepository {
     }
 
     /** Albums credited to the artist, newest first. */
-    public List<Album> findByArtistId(UUID artistId) {
+    /** Albums owned by any of these artist rows (a canonical and its aliases), newest first. */
+    public List<Album> findByArtistIds(Collection<UUID> artistIds) {
+        String[] arr = artistIds.stream().map(UUID::toString).toArray(String[]::new);
         List<UUID> ids = jdbc.sql("""
-                        SELECT id FROM catalog.albums WHERE artist_id = :artistId
+                        SELECT id FROM catalog.albums WHERE artist_id = ANY(CAST(:artistIds AS uuid[]))
                         ORDER BY release_date DESC NULLS LAST, title
                         """)
-                .param("artistId", artistId)
+                .param("artistIds", arr)
                 .query(UUID.class)
                 .list();
         return findByIds(ids);

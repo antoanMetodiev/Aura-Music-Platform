@@ -15,6 +15,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -52,6 +53,21 @@ public class ArtistRepository {
                 .query(UUID.class)
                 .optional()
                 .flatMap(this::findById);
+    }
+
+    /** One artist per distinct name (a canonical over an alias, then the most popular), any order. */
+    public List<Artist> findByExactNames(Collection<String> names) {
+        if (names.isEmpty()) return List.of();
+        String[] lowered = names.stream().map(n -> n.toLowerCase(java.util.Locale.ROOT)).distinct().toArray(String[]::new);
+        List<UUID> ids = jdbc.sql("""
+                        SELECT DISTINCT ON (lower(name)) id FROM catalog.artists
+                        WHERE lower(name) = ANY(:names)
+                        ORDER BY lower(name), (canonical_artist_id IS NULL) DESC, popularity DESC
+                        """)
+                .param("names", lowered)
+                .query(UUID.class)
+                .list();
+        return findByIds(ids);
     }
 
     /** Input order preserved; ids with no row are skipped. Two round trips regardless of list size. */
@@ -92,7 +108,8 @@ public class ArtistRepository {
     }
 
     static Artist toArtist(ArtistRow row, List<ProviderReference> refs) {
-        return new Artist(row.id(), row.name(), row.artwork(), row.popularity(), refs, row.providerSyncedAt(), row.createdAt(), row.updatedAt());
+        return new Artist(row.id(), row.name(), row.artwork(), row.popularity(), row.canonicalArtistId(), refs,
+                row.providerSyncedAt(), row.createdAt(), row.updatedAt());
     }
 
     static ArtistRow mapRow(ResultSet rs, int rowNum) throws SQLException {
@@ -105,6 +122,7 @@ public class ArtistRepository {
                 rs.getString("name"),
                 artwork,
                 rs.getDouble("popularity"),
+                (UUID) rs.getObject("canonical_artist_id"),
                 toInstant(rs, "provider_synced_at"),
                 toInstant(rs, "created_at"),
                 toInstant(rs, "updated_at")
@@ -116,7 +134,154 @@ public class ArtistRepository {
         return ts == null ? null : ts.toInstant();
     }
 
-    record ArtistRow(UUID id, String primaryRef, String name, Artwork artwork, double popularity,
+    record ArtistRow(UUID id, String primaryRef, String name, Artwork artwork, double popularity, UUID canonicalArtistId,
                      Instant providerSyncedAt, Instant createdAt, Instant updatedAt) {
+    }
+
+    // ── Duplicate artists (V14) ────────────────────────────────────────────────────────────
+
+    /** Every row with this name (case-insensitive), canonical or alias. */
+    public List<Artist> findByNormalizedName(String name) {
+        List<UUID> ids = jdbc.sql("SELECT id FROM catalog.artists WHERE lower(name) = :name ORDER BY popularity DESC")
+                .param("name", name.strip().toLowerCase(Locale.ROOT))
+                .query(UUID.class)
+                .list();
+        return findByIds(ids);
+    }
+
+    /** Names carried by more than one row — the backfill's worklist. */
+    public List<String> findDuplicatedNames() {
+        return jdbc.sql("SELECT lower(name) FROM catalog.artists GROUP BY lower(name) HAVING count(*) > 1 ORDER BY 1")
+                .query(String.class)
+                .list();
+    }
+
+    /** The canonical artist and every alias pointing at it (the canonical id first). */
+    public List<UUID> findGroupIds(UUID canonicalId) {
+        List<UUID> ids = new ArrayList<>();
+        ids.add(canonicalId);
+        ids.addAll(jdbc.sql("SELECT id FROM catalog.artists WHERE canonical_artist_id = :id")
+                .param("id", canonicalId)
+                .query(UUID.class)
+                .list());
+        return ids;
+    }
+
+    /**
+     * Whether two same-named rows are demonstrably the same artist: they are credited on a track with
+     * the same ISRC (the same recording), or on tracks of the same album, or one owns an album the
+     * other is credited on. Any of those is evidence a provider split one artist into two profiles.
+     */
+    public boolean shareRecordingOrRelease(UUID a, UUID b) {
+        Boolean shared = jdbc.sql("""
+                        SELECT EXISTS (
+                            SELECT 1 FROM catalog.track_artists ta1
+                            JOIN catalog.tracks t1 ON t1.id = ta1.track_id
+                            JOIN catalog.tracks t2 ON t2.isrc = t1.isrc
+                            JOIN catalog.track_artists ta2 ON ta2.track_id = t2.id
+                            WHERE ta1.artist_id = :a AND ta2.artist_id = :b AND t1.isrc IS NOT NULL
+                        ) OR EXISTS (
+                            SELECT 1 FROM catalog.track_artists ta1
+                            JOIN catalog.tracks t1 ON t1.id = ta1.track_id
+                            JOIN catalog.tracks t2 ON t2.album_id = t1.album_id
+                            JOIN catalog.track_artists ta2 ON ta2.track_id = t2.id
+                            WHERE ta1.artist_id = :a AND ta2.artist_id = :b AND t1.album_id IS NOT NULL
+                        ) OR EXISTS (
+                            SELECT 1 FROM catalog.albums al
+                            JOIN catalog.tracks t ON t.album_id = al.id
+                            JOIN catalog.track_artists ta ON ta.track_id = t.id
+                            WHERE (al.artist_id = :a AND ta.artist_id = :b) OR (al.artist_id = :b AND ta.artist_id = :a)
+                        )
+                        """)
+                .param("a", a)
+                .param("b", b)
+                .query(Boolean.class)
+                .single();
+        return Boolean.TRUE.equals(shared);
+    }
+
+    /** Tracks credited to each of these rows alone (not their groups) — the tie-breaker for picking a canonical. */
+    public Map<UUID, Integer> countOwnTracks(Collection<UUID> ids) {
+        if (ids.isEmpty()) return Map.of();
+        String[] arr = ids.stream().map(UUID::toString).toArray(String[]::new);
+        Map<UUID, Integer> counts = new HashMap<>();
+        jdbc.sql("SELECT artist_id, count(*) AS n FROM catalog.track_artists WHERE artist_id = ANY(CAST(:ids AS uuid[])) GROUP BY artist_id")
+                .param("ids", arr)
+                .query((rs, n) -> Map.entry((UUID) rs.getObject("artist_id"), rs.getInt("n")))
+                .list()
+                .forEach(e -> counts.put(e.getKey(), e.getValue()));
+        return counts;
+    }
+
+    /** Points every alias (and anything that used to point at them) at the canonical, which is cleared itself. */
+    public void setCanonical(Collection<UUID> aliases, UUID canonical) {
+        if (!aliases.isEmpty()) {
+            String[] arr = aliases.stream().map(UUID::toString).toArray(String[]::new);
+            jdbc.sql("""
+                            UPDATE catalog.artists SET canonical_artist_id = :canonical, updated_at = now()
+                            WHERE id = ANY(CAST(:ids AS uuid[])) OR canonical_artist_id = ANY(CAST(:ids AS uuid[]))
+                            """)
+                    .param("canonical", canonical)
+                    .param("ids", arr)
+                    .update();
+        }
+        jdbc.sql("UPDATE catalog.artists SET canonical_artist_id = NULL WHERE id = :id AND canonical_artist_id IS NOT NULL")
+                .param("id", canonical)
+                .update();
+    }
+
+    /** Tracks credited to anyone in each canonical's group — the "how much do we know about them" signal search ranks by. */
+    public Map<UUID, Integer> countGroupTracks(Collection<UUID> canonicalIds) {
+        if (canonicalIds.isEmpty()) return Map.of();
+        String[] arr = canonicalIds.stream().map(UUID::toString).toArray(String[]::new);
+        Map<UUID, Integer> counts = new HashMap<>();
+        jdbc.sql("""
+                        SELECT COALESCE(a.canonical_artist_id, a.id) AS cid, count(*) AS n
+                        FROM catalog.track_artists ta
+                        JOIN catalog.artists a ON a.id = ta.artist_id
+                        WHERE COALESCE(a.canonical_artist_id, a.id) = ANY(CAST(:ids AS uuid[]))
+                        GROUP BY 1
+                        """)
+                .param("ids", arr)
+                .query((rs, n) -> Map.entry((UUID) rs.getObject("cid"), rs.getInt("n")))
+                .list()
+                .forEach(e -> counts.put(e.getKey(), e.getValue()));
+        return counts;
+    }
+
+    /**
+     * A profile that exists only as a "feat." credit: at most {@code maxTracks} tracks, primary
+     * artist on none of them, owner of no album. That is what a label's upload of a guest appearance
+     * under a fresh profile looks like.
+     */
+    public boolean isFeatureOnlyProfile(UUID id, int maxTracks) {
+        Boolean featureOnly = jdbc.sql("""
+                        SELECT (SELECT count(*) FROM catalog.track_artists WHERE artist_id = :id) BETWEEN 1 AND :max
+                           AND NOT EXISTS (SELECT 1 FROM catalog.track_artists WHERE artist_id = :id AND position = 0)
+                           AND NOT EXISTS (SELECT 1 FROM catalog.albums WHERE artist_id = :id)
+                        """)
+                .param("id", id)
+                .param("max", maxTracks)
+                .query(Boolean.class)
+                .single();
+        return Boolean.TRUE.equals(featureOnly);
+    }
+
+    /** Whether the two rows have tracks whose ISRCs were issued in the same country (the first two characters). */
+    public boolean shareIsrcCountry(UUID a, UUID b) {
+        Boolean shared = jdbc.sql("""
+                        SELECT EXISTS (
+                            SELECT 1
+                            FROM catalog.track_artists ta1 JOIN catalog.tracks t1 ON t1.id = ta1.track_id
+                            JOIN catalog.track_artists ta2 JOIN catalog.tracks t2 ON t2.id = ta2.track_id
+                              ON substr(t2.isrc, 1, 2) = substr(t1.isrc, 1, 2)
+                            WHERE ta1.artist_id = :a AND ta2.artist_id = :b AND t1.isrc IS NOT NULL AND t2.isrc IS NOT NULL
+                        )
+                        """)
+                .param("a", a)
+                .param("b", b)
+                .query(Boolean.class)
+                .single();
+        return Boolean.TRUE.equals(shared);
     }
 }

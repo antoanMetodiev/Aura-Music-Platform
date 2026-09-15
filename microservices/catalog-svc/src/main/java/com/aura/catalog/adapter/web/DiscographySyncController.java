@@ -4,6 +4,7 @@ import com.aura.catalog.adapter.worker.ArtistDiscographyWorker;
 import com.aura.catalog.config.DiscographySyncProperties;
 import com.aura.catalog.domain.port.DiscographySyncStore;
 import com.aura.catalog.domain.service.ArtistDiscographyService;
+import com.aura.catalog.domain.service.ArtistMergeService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,9 +37,11 @@ public class DiscographySyncController {
     private final ArtistDiscographyService service;
     private final DiscographySyncProperties properties;
     private final ObjectProvider<ArtistDiscographyWorker> worker;
+    private final ArtistMergeService artistMerge;
 
     public DiscographySyncController(ArtistDiscographyService service, DiscographySyncProperties properties,
-                                     ObjectProvider<ArtistDiscographyWorker> worker) {
+                                     ObjectProvider<ArtistDiscographyWorker> worker, ArtistMergeService artistMerge) {
+        this.artistMerge = artistMerge;
         this.service = service;
         this.properties = properties;
         this.worker = worker;
@@ -68,5 +71,11 @@ public class DiscographySyncController {
         return service.syncNext()
                 .map(o -> new LastOutcome(o.artist().id(), o.artist().name(), o.trackCount(), o.newArtists(), o.error(), o.at()))
                 .orElse(null);
+    }
+
+    /** Folds every same-named artist row that shares a recording or release into one canonical artist (V14). Returns how many rows are aliases now. */
+    @GetMapping("/merge-duplicate-artists")
+    public java.util.Map<String, Integer> mergeDuplicateArtists() {
+        return java.util.Map.of("aliases", artistMerge.mergeAll());
     }
 }

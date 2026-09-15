@@ -48,6 +48,17 @@ music:
     # every service reads the same config surface.
     crossProviderPlayback:
       enabled: false
+    # Artist "About" (biography, tags, similar artists, stats). Free key from https://www.last.fm/api/account/create;
+    # non-commercial by default, 5 req/s. Biographies are CC BY-SA and credited with a link in the UI.
+    lastfm:
+      enabled: ${LASTFM_ENABLED:true}
+      api-key: ${LASTFM_API_KEY:}
+      user-agent: ${LASTFM_USER_AGENT:Aura-Music-Platform/0.1 (dev; antoan.0418@gmail.com)}
+    # Artist outside links (site, socials, Wikipedia) and a profile text used when Last.fm has no biography.
+    discogs:
+      enabled: ${DISCOGS_ENABLED:true}
+      token: ${DISCOGS_TOKEN:}
+      user-agent: ${DISCOGS_USER_AGENT:Aura-Music-Platform/0.1 (dev; antoan.0418@gmail.com)}
 
 aura:
   catalog:
@@ -79,6 +90,11 @@ aura:
       user-agent: ${LRCLIB_USER_AGENT:Aura-Music-Platform/0.1 (dev; antoan.0418@gmail.com)}
       search-duration-tolerance-seconds: 5
 
+  # Artist "About" cache: refreshed from the providers after refresh-after; an artist nobody knew is retried after retry-missing-after.
+  artist-about:
+    refresh-after: 30d
+    retry-missing-after: 30d
+
 resilience4j:
   circuitbreaker:
     instances:
@@ -104,6 +120,20 @@ resilience4j:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 60s
         permitted-number-of-calls-in-half-open-state: 3
+      lastfm:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 3
+      discogs:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 3
   # Resilience4j's TimeLimiter runs each call on a pool thread and *interrupts* it on timeout. Calls
   # now deliberately wait in TidalRequestThrottle (spacing, Retry-After pauses), so this has to be
   # far above the HTTP timeouts (spring.http.client.*), which are the real per-request guard.
@@ -114,6 +144,11 @@ resilience4j:
       tidal-background:
         timeout-duration: 300s
       lrclib:
+        timeout-duration: 30s
+      lastfm:
+        timeout-duration: 20s
+      # Two paced Discogs calls per artist (search, page).
+      discogs:
         timeout-duration: 30s
 
 management:

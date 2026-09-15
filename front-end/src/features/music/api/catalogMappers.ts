@@ -3,8 +3,8 @@
  * (`types/catalog.ts`, the same shapes the mock catalog uses). Keeping this conversion in one
  * place means swapping mock data for real data never touches a single component.
  */
-import type { AlbumDto, AlbumSummaryDto, ArtistDto, ArtistSummaryDto, ArtworkDto, TrackDto } from "@/types/api";
-import type { Album, AlbumSummary, Artist, ArtistSummary, Artwork, Track } from "@/types/catalog";
+import type { AlbumDto, AlbumSummaryDto, ArtistAboutDto, ArtistDto, ArtistSummaryDto, ArtworkDto, TrackDto } from "@/types/api";
+import type { Album, AlbumSummary, Artist, ArtistAbout, ArtistSummary, Artwork, Track } from "@/types/catalog";
 
 const UNKNOWN_ARTIST: ArtistSummary = { id: "unknown-artist", name: "Unknown Artist" };
 const UNKNOWN_ALBUM: AlbumSummary = { id: "unknown-album", title: "Unknown Album", artist: UNKNOWN_ARTIST };
@@ -59,5 +59,17 @@ export function toTrack(dto: TrackDto): Track {
     // TEMPORARY: the Playback Resolver Service doesn't exist yet, so every catalog track is
     // reported playable. Once it does, this comes from a real lookup (Project-Info.md §16).
     playbackAvailable: true,
+  };
+}
+
+export function toArtistAbout(dto: ArtistAboutDto): ArtistAbout {
+  return {
+    artistId: dto.artistId,
+    biography: dto.biography,
+    listeners: dto.listeners,
+    playcount: dto.playcount,
+    tags: dto.tags ?? [],
+    similar: (dto.similar ?? []).map((s) => ({ name: s.name, artist: s.artist ? toArtistSummary(s.artist) : null })),
+    links: dto.links ?? [],
   };
 }

@@ -9,6 +9,7 @@ import com.aura.catalog.domain.model.Track;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -31,11 +32,11 @@ public interface CatalogStore {
     /** In album play order (volume, then track number); tracks with no known position come last. */
     List<Track> findTracksByAlbumId(UUID albumId);
 
-    /** Every track the artist appears on, most popular first. */
-    List<Track> findTracksByArtistId(UUID artistId, int limit);
+    /** Tracks credited to any of these artist rows (a canonical and its aliases), most popular first. */
+    List<Track> findTracksByArtistIds(Collection<UUID> artistIds, int limit);
 
-    /** Albums credited to the artist, newest first. */
-    List<Album> findAlbumsByArtistId(UUID artistId);
+    /** Albums owned by any of these artist rows, newest first. */
+    List<Album> findAlbumsByArtistIds(Collection<UUID> artistIds);
 
     /** Keyset page over every track in insertion order, strictly after {@code (createdAfter, afterId)}. */
     List<Track> findTracksCreatedAfter(java.time.Instant createdAfter, UUID afterId, int limit);
@@ -65,6 +66,38 @@ public interface CatalogStore {
     List<Album> findAlbumsByIds(Collection<UUID> ids);
 
     List<Artist> findArtistsByIds(Collection<UUID> ids);
+
+    /** Artists whose name equals one of these, case-insensitively — a canonical over an alias, then the most popular, per name. */
+    List<Artist> findArtistsByExactNames(Collection<String> names);
+
+    // ── Duplicate artists (V14) ────────────────────────────────────────────────────────────
+
+    /** Every artist row with this name, canonical or alias. */
+    List<Artist> findArtistsByNormalizedName(String name);
+
+    /** Names carried by more than one row. */
+    List<String> findDuplicatedArtistNames();
+
+    /** The canonical artist id followed by every alias pointing at it. */
+    List<UUID> findArtistGroupIds(UUID canonicalId);
+
+    /** Whether two rows are credited on the same recording (ISRC) or release (album) — provider-split evidence. */
+    boolean artistsShareRecordingOrRelease(UUID a, UUID b);
+
+    /** Tracks credited to each row alone. */
+    Map<UUID, Integer> countOwnTracksByArtist(Collection<UUID> artistIds);
+
+    /** A row credited only as a guest (no primary credit, no album) on at most {@code maxTracks} tracks. */
+    boolean isFeatureOnlyArtistProfile(UUID id, int maxTracks);
+
+    /** Whether the two rows have tracks with ISRCs issued in the same country. */
+    boolean artistsShareIsrcCountry(UUID a, UUID b);
+
+    /** Tracks credited to anyone in each canonical's group. */
+    Map<UUID, Integer> countGroupTracksByCanonical(Collection<UUID> canonicalIds);
+
+    /** Makes {@code canonical} the canonical of every {@code aliases} row (and of whatever pointed at them). */
+    void setCanonicalArtist(Collection<UUID> aliases, UUID canonical);
 
     // ── Search result cache ────────────────────────────────────────────────────────────────
 

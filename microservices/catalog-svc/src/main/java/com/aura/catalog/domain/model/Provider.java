@@ -6,5 +6,9 @@ package com.aura.catalog.domain.model;
  */
 public enum Provider {
     TIDAL,
-    LRCLIB
+    LRCLIB,
+    /** Artist biography, tags, similar artists, listener stats. */
+    LASTFM,
+    /** Artist profile text and outside links. */
+    DISCOGS
 }

@@ -99,18 +99,19 @@ public class TrackRepository {
         return findByIds(ids);
     }
 
-    /** Every track the artist appears on (main or featured), most popular first. */
-    public List<Track> findByArtistId(UUID artistId, int limit) {
+    /** Every track any of these artist rows appears on (main or featured) — a canonical and its aliases — most popular first. */
+    public List<Track> findByArtistIds(Collection<UUID> artistIds, int limit) {
+        String[] arr = artistIds.stream().map(UUID::toString).toArray(String[]::new);
         List<UUID> ids = jdbc.sql("""
-                        SELECT t.id FROM catalog.tracks t
+                        SELECT DISTINCT t.id, t.popularity, t.title FROM catalog.tracks t
                         JOIN catalog.track_artists ta ON ta.track_id = t.id
-                        WHERE ta.artist_id = :artistId
+                        WHERE ta.artist_id = ANY(CAST(:artistIds AS uuid[]))
                         ORDER BY t.popularity DESC, t.title
                         LIMIT :limit
                         """)
-                .param("artistId", artistId)
+                .param("artistIds", arr)
                 .param("limit", limit)
-                .query(UUID.class)
+                .query((rs, n) -> (UUID) rs.getObject("id"))
                 .list();
         return findByIds(ids);
     }

@@ -40,11 +40,14 @@ public class ArtistDiscographyService {
     private final CatalogStore store;
     private final MusicMetadataProvider metadata;
     private final DiscographySyncProperties properties;
+    private final ArtistMergeService artistMerge;
     private final AtomicReference<Outcome> last = new AtomicReference<>();
     private final AtomicReference<PendingArtist> inProgress = new AtomicReference<>();
 
     public ArtistDiscographyService(DiscographySyncStore queue, CatalogStore store,
-                                    MusicMetadataProvider metadata, DiscographySyncProperties properties) {
+                                    MusicMetadataProvider metadata, DiscographySyncProperties properties,
+                                    ArtistMergeService artistMerge) {
+        this.artistMerge = artistMerge;
         this.queue = queue;
         this.store = store;
         this.metadata = metadata;
@@ -62,6 +65,8 @@ public class ArtistDiscographyService {
             List<ProviderTrack> tracks = metadata.getArtistTracks(artist.ref().providerResourceId());
             UpsertedBatch persisted = store.upsertBatch(tracks, List.of(), List.of());
             queue.markSynced(artist.id(), persisted.tracks().size());
+            // The tracks just stored are the evidence that same-named profiles are one act (V14).
+            artistMerge.mergeDuplicatesNamed(artist.name());
             long newArtists = queue.stats(properties.refreshAfter()).artistsTotal() - artistsBefore;
             Outcome outcome = new Outcome(artist, persisted.tracks().size(), (int) newArtists, null, false, Instant.now());
             log.info("Discography sync: '{}' -> {} tracks, {} new artists discovered", artist.name(), outcome.trackCount(), newArtists);

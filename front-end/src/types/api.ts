@@ -90,3 +90,15 @@ export interface LyricsDto {
   synced: { timeMs: number; text: string }[] | null;
   plain: string | null;
 }
+
+/** `GET /catalog/artists/{id}/about`. Every part optional; `biography.source`/`url` must be credited in the UI. */
+export interface ArtistAboutDto {
+  artistId: string;
+  biography: { text: string; source: string; url: string | null; language: string | null } | null;
+  listeners: number | null;
+  playcount: number | null;
+  tags: string[];
+  /** `artist` is set only when we have that artist in our own catalog. */
+  similar: { name: string; artist: ArtistSummaryDto | null }[];
+  links: { type: string; url: string }[];
+}

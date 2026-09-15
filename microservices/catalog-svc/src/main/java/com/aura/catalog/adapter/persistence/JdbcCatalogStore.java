@@ -21,6 +21,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -81,13 +82,13 @@ public class JdbcCatalogStore implements CatalogStore {
     }
 
     @Override
-    public List<Track> findTracksByArtistId(UUID artistId, int limit) {
-        return tracks.findByArtistId(artistId, limit);
+    public List<Track> findTracksByArtistIds(Collection<UUID> artistIds, int limit) {
+        return tracks.findByArtistIds(artistIds, limit);
     }
 
     @Override
-    public List<Album> findAlbumsByArtistId(UUID artistId) {
-        return albums.findByArtistId(artistId);
+    public List<Album> findAlbumsByArtistIds(Collection<UUID> artistIds) {
+        return albums.findByArtistIds(artistIds);
     }
 
     @Override
@@ -148,6 +149,56 @@ public class JdbcCatalogStore implements CatalogStore {
     @Override
     public List<Artist> findArtistsByIds(Collection<UUID> ids) {
         return artists.findByIds(ids);
+    }
+
+    @Override
+    public List<Artist> findArtistsByExactNames(Collection<String> names) {
+        return artists.findByExactNames(names);
+    }
+
+    @Override
+    public List<Artist> findArtistsByNormalizedName(String name) {
+        return artists.findByNormalizedName(name);
+    }
+
+    @Override
+    public List<String> findDuplicatedArtistNames() {
+        return artists.findDuplicatedNames();
+    }
+
+    @Override
+    public List<UUID> findArtistGroupIds(UUID canonicalId) {
+        return artists.findGroupIds(canonicalId);
+    }
+
+    @Override
+    public boolean artistsShareRecordingOrRelease(UUID a, UUID b) {
+        return artists.shareRecordingOrRelease(a, b);
+    }
+
+    @Override
+    public Map<UUID, Integer> countOwnTracksByArtist(Collection<UUID> artistIds) {
+        return artists.countOwnTracks(artistIds);
+    }
+
+    @Override
+    public boolean isFeatureOnlyArtistProfile(UUID id, int maxTracks) {
+        return artists.isFeatureOnlyProfile(id, maxTracks);
+    }
+
+    @Override
+    public boolean artistsShareIsrcCountry(UUID a, UUID b) {
+        return artists.shareIsrcCountry(a, b);
+    }
+
+    @Override
+    public Map<UUID, Integer> countGroupTracksByCanonical(Collection<UUID> canonicalIds) {
+        return artists.countGroupTracks(canonicalIds);
+    }
+
+    @Override
+    public void setCanonicalArtist(Collection<UUID> aliases, UUID canonical) {
+        artists.setCanonical(aliases, canonical);
     }
 
     @Override

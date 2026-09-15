@@ -1,7 +1,7 @@
 import { apiFetch } from "@/lib/api/client";
-import type { AlbumDto, ArtistDto, SearchResponseDto, TrackDto } from "@/types/api";
-import type { Album, AlbumSummary, Artist, ArtistSummary, Track } from "@/types/catalog";
-import { toAlbum, toAlbumSummary, toArtist, toArtistSummary, toTrack } from "./catalogMappers";
+import type { AlbumDto, ArtistAboutDto, ArtistDto, SearchResponseDto, TrackDto } from "@/types/api";
+import type { Album, AlbumSummary, Artist, ArtistAbout, ArtistSummary, Track } from "@/types/catalog";
+import { toAlbum, toAlbumSummary, toArtist, toArtistAbout, toArtistSummary, toTrack } from "./catalogMappers";
 
 export type CatalogSearchType = "tracks" | "albums" | "artists";
 
@@ -81,4 +81,14 @@ export async function getAlbum(id: string): Promise<Album> {
 export async function getAlbumTracks(id: string): Promise<Track[]> {
   const dtos = await apiFetch<TrackDto[]>(`/catalog/albums/${encodeURIComponent(id)}/tracks`);
   return dtos.map(toTrack);
+}
+
+/**
+ * Biography, tags, similar artists, stats and outside links (Last.fm + Discogs, gathered lazily by
+ * the backend on first request). `lang` picks the biography language when available.
+ */
+export async function getArtistAbout(id: string, lang?: string): Promise<ArtistAbout> {
+  const query = lang ? `?lang=${encodeURIComponent(lang)}` : "";
+  const dto = await apiFetch<ArtistAboutDto>(`/catalog/artists/${id}/about${query}`);
+  return toArtistAbout(dto);
 }

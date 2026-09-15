@@ -62,6 +62,7 @@ public class CatalogService {
     private final CatalogProperties properties;
     private final Clock clock;
     private final ExecutorService refreshExecutor;
+    private final ArtistMergeService artistMerge;
     private final Cache<String, Hydrated> memory;
     private final ConcurrentHashMap<String, CompletableFuture<Void>> refreshing = new ConcurrentHashMap<>();
 
@@ -71,7 +72,9 @@ public class CatalogService {
                           MusicSearchProvider search,
                           CatalogProperties properties,
                           Clock clock,
+                          ArtistMergeService artistMerge,
                           @AppConfig.HttpIo ExecutorService httpIoExecutor) {
+        this.artistMerge = artistMerge;
         this.store = store;
         this.discography = discography;
         this.metadata = metadata;
@@ -147,7 +150,7 @@ public class CatalogService {
         return new SearchResult(query,
                 take(served, SearchType.TRACKS, effectiveLimit),
                 take(served, SearchType.ALBUMS, effectiveLimit),
-                take(served, SearchType.ARTISTS, effectiveLimit));
+                rankArtists(take(served, SearchType.ARTISTS, effectiveLimit)));
     }
 
     /**
@@ -163,7 +166,7 @@ public class CatalogService {
         return new SearchResult(query,
                 take(local, SearchType.TRACKS, effectiveLimit),
                 take(local, SearchType.ALBUMS, effectiveLimit),
-                take(local, SearchType.ARTISTS, effectiveLimit));
+                rankArtists(take(local, SearchType.ARTISTS, effectiveLimit)));
     }
 
     /**
@@ -174,21 +177,70 @@ public class CatalogService {
     public SearchResult suggest(String query, int trackLimit, int artistLimit) {
         String q = query.trim();
         List<Track> tracks = dedupeReleases(store.suggestTracks(q, trackLimit * 3), trackLimit);
-        List<Artist> artists = dedupeArtists(store.suggestArtists(q, artistLimit * 3), artistLimit);
+        List<Artist> artists = dedupeArtists(rankArtists(store.suggestArtists(q, artistLimit * 3)), artistLimit);
         return new SearchResult(q, tracks, List.of(), artists);
     }
 
-    /** Keeps the first (best-ranked) track per (normalized title, primary artist). */
+    /**
+     * Keeps the first (best-ranked) release per recording: the same ISRC, or the same normalized
+     * title by the same primary artist (by canonical row, so a duplicate profile of the artist
+     * doesn't make the same song look like two — V14).
+     */
     private static List<Track> dedupeReleases(List<Track> tracks, int limit) {
         Set<String> seen = new java.util.HashSet<>();
         List<Track> out = new java.util.ArrayList<>();
         for (Track t : tracks) {
-            String artist = t.primaryArtist() == null ? "" : t.primaryArtist().id().toString();
-            String key = t.title().trim().toLowerCase(Locale.ROOT) + "|" + artist;
-            if (seen.add(key)) out.add(t);
+            String artist = t.primaryArtist() == null ? "" : t.primaryArtist().canonicalId().toString();
+            String byTitle = "t:" + t.title().trim().toLowerCase(Locale.ROOT) + "|" + artist;
+            String byIsrc = t.isrc() == null || t.isrc().isBlank() ? null : "i:" + t.isrc().trim().toUpperCase(Locale.ROOT);
+            boolean fresh = seen.add(byTitle);
+            if (byIsrc != null) fresh = seen.add(byIsrc) && fresh;
+            if (fresh) out.add(t);
             if (out.size() == limit) break;
         }
         return out;
+    }
+
+    /**
+     * Provider duplicates of one artist collapse to the canonical row (V14), and among artists that
+     * still share a name the one we know the most tracks for comes first — a label's two-single
+     * profile must not outrank the artist's real catalogue just because the provider scored it a
+     * notch higher. Positions are only swapped within a same-name group, so the provider's ranking
+     * across different artists is kept.
+     */
+    private List<Artist> rankArtists(List<Artist> artists) {
+        if (artists.isEmpty()) return artists;
+        // Aliases → canonical rows, keeping first appearance order and dropping duplicates.
+        Map<UUID, Artist> canonicals = new java.util.LinkedHashMap<>();
+        List<UUID> missing = new java.util.ArrayList<>();
+        for (Artist a : artists) {
+            if (!a.isAlias()) canonicals.putIfAbsent(a.id(), a);
+            else if (!canonicals.containsKey(a.canonicalArtistId())) { canonicals.put(a.canonicalArtistId(), null); missing.add(a.canonicalArtistId()); }
+        }
+        if (!missing.isEmpty()) store.findArtistsByIds(missing).forEach(a -> canonicals.put(a.id(), a));
+        List<Artist> unique = canonicals.values().stream().filter(java.util.Objects::nonNull).toList();
+
+        Map<UUID, Integer> richness = store.countGroupTracksByCanonical(unique.stream().map(Artist::id).toList());
+        // Same-name groups: sort each group's members by richness, then write them back into the group's original slots.
+        Map<String, List<Integer>> slotsByName = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < unique.size(); i++) {
+            slotsByName.computeIfAbsent(unique.get(i).name().trim().toLowerCase(Locale.ROOT), k -> new java.util.ArrayList<>()).add(i);
+        }
+        Artist[] ranked = unique.toArray(new Artist[0]);
+        for (List<Integer> slots : slotsByName.values()) {
+            if (slots.size() < 2) continue;
+            List<Artist> members = slots.stream().map(unique::get)
+                    .sorted(java.util.Comparator.<Artist>comparingInt(a -> richness.getOrDefault(a.id(), 0)).reversed()
+                            .thenComparing(java.util.Comparator.comparingDouble(Artist::popularity).reversed()))
+                    .toList();
+            for (int i = 0; i < slots.size(); i++) ranked[slots.get(i)] = members.get(i);
+        }
+        return java.util.Arrays.stream(ranked).map(this::withBorrowedArtwork).toList();
+    }
+
+    /** A canonical row with no picture shows a duplicate profile's — see {@link #canonical(Artist)}. */
+    private Artist withBorrowedArtwork(Artist artist) {
+        return artist.artwork() != null || artist.isAlias() ? artist : canonical(artist);
     }
 
     /** Providers list some artists twice (regional duplicates); keep the first per normalized name. */
@@ -388,50 +440,88 @@ public class CatalogService {
 
     // ── Artists ────────────────────────────────────────────────────────────────────────────
 
+
+    /**
+     * Reads through an alias serve the canonical artist (V14): opening any of a provider's duplicate
+     * profiles lands on the one row that stands for the act. The caller can tell by the id changing.
+     */
     public Artist getArtist(UUID id) {
-        Artist local = store.findArtistById(id)
-                .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", id));
+        Artist local = canonical(store.findArtistById(id)
+                .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", id)));
         return refreshIfStale(local, local.providerSyncedAt(), local.providerReferences(),
                 ref -> metadata.getArtist(ref.providerResourceId()).map(store::upsertArtist).orElse(local));
     }
 
     /**
-     * The artist's most popular tracks, one entry per recording. The first time an artist is
-     * opened before the background sync reached them, their discography is pulled right now
-     * (same call the worker makes) so the page is complete rather than showing the two tracks a
-     * search happened to bring in.
+     * The artist's most popular tracks, one entry per recording, gathered across every duplicate
+     * profile in the group. The first time an artist is opened before the background sync reached
+     * them, their discography is pulled right now (same call the worker makes) so the page is
+     * complete rather than showing the two tracks a search happened to bring in.
      */
     public List<Track> getArtistTopTracks(UUID artistId, int limit) {
-        Artist artist = store.findArtistById(artistId)
-                .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", artistId));
-        ensureDiscography(artist);
-        return dedupeReleases(store.findTracksByArtistId(artistId, limit * 4), limit);
+        List<UUID> group = readyGroup(artistId);
+        return dedupeReleases(store.findTracksByArtistIds(group, limit * 4), limit);
     }
 
-    /** Albums, EPs and singles credited to the artist, newest first (discography pulled on first open, as above). */
+    /** Albums, EPs and singles credited to the artist (any profile in the group), newest first. */
     public List<Album> getArtistAlbums(UUID artistId) {
-        Artist artist = store.findArtistById(artistId)
-                .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", artistId));
-        ensureDiscography(artist);
+        List<UUID> group = readyGroup(artistId);
         // Providers carry regional / clean-vs-explicit duplicates of the same release; keep one per (title, date).
         Set<String> seen = new java.util.HashSet<>();
-        return store.findAlbumsByArtistId(artistId).stream()
+        return store.findAlbumsByArtistIds(group).stream()
                 .filter(al -> seen.add(al.title().trim().toLowerCase(Locale.ROOT) + "|" + al.releaseDate()))
                 .toList();
     }
 
-    private void ensureDiscography(Artist artist) {
-        if (discography.syncedAt(artist.id()).isPresent()) return;
+    /**
+     * The canonical artist's id plus its aliases, each profile's discography pulled if it never was.
+     * A sync brings in the recordings that prove two profiles are one act, so duplicates are merged
+     * right after — which can change which row is canonical, hence the group is re-read at the end.
+     */
+    private List<UUID> readyGroup(UUID artistId) {
+        Artist artist = canonical(store.findArtistById(artistId)
+                .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", artistId)));
+        boolean synced = false;
+        for (UUID memberId : store.findArtistGroupIds(artist.id())) {
+            Artist member = memberId.equals(artist.id()) ? artist : store.findArtistById(memberId).orElse(null);
+            if (member != null) synced |= ensureDiscography(member);
+        }
+        UUID canonicalId = synced ? artistMerge.mergeDuplicatesOf(artist) : artist.id();
+        return store.findArtistGroupIds(canonicalId);
+    }
+
+    /**
+     * The row that stands for this artist. A canonical row with no picture borrows one from a
+     * duplicate profile — the label that split off a single often uploaded the better photo.
+     */
+    private Artist canonical(Artist artist) {
+        Artist canonical = artist.isAlias() ? store.findArtistById(artist.canonicalArtistId()).orElse(artist) : artist;
+        if (canonical.artwork() != null) return canonical;
+        List<UUID> aliases = store.findArtistGroupIds(canonical.id());
+        if (aliases.size() < 2) return canonical;
+        return store.findArtistsByIds(aliases.subList(1, aliases.size())).stream()
+                .filter(a -> a.artwork() != null)
+                .findFirst()
+                .map(a -> new Artist(canonical.id(), canonical.name(), a.artwork(), canonical.popularity(), null,
+                        canonical.providerReferences(), canonical.providerSyncedAt(), canonical.createdAt(), canonical.updatedAt()))
+                .orElse(canonical);
+    }
+
+    /** Pulls the artist's discography from the provider if it never was. Returns true when it just did. */
+    private boolean ensureDiscography(Artist artist) {
+        if (discography.syncedAt(artist.id()).isPresent()) return false;
         ProviderReference ref = providerRef(artist.providerReferences());
-        if (ref == null) return;
+        if (ref == null) return false;
         try {
             List<ProviderTrack> tracks = metadata.getArtistTracks(ref.providerResourceId());
             store.upsertBatch(tracks, List.of(), List.of());
             discography.markSynced(artist.id(), tracks.size());
+            return true;
         } catch (ProviderUnavailableException e) {
             // Serve what we have; the background worker will complete the discography later.
             log.warn("Provider {} unavailable while pulling discography of '{}', serving local tracks only: {}",
                     metadata.provider(), artist.name(), e.getMessage());
+            return false;
         }
     }
 
