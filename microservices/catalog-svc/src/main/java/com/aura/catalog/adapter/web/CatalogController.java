@@ -2,10 +2,12 @@ package com.aura.catalog.adapter.web;
 
 import com.aura.catalog.adapter.web.dto.AlbumResponse;
 import com.aura.catalog.adapter.web.dto.ArtistResponse;
+import com.aura.catalog.adapter.web.dto.LyricsResponse;
 import com.aura.catalog.adapter.web.dto.SearchResponse;
 import com.aura.catalog.adapter.web.dto.TrackResponse;
 import com.aura.catalog.domain.model.SearchType;
 import com.aura.catalog.domain.service.CatalogService;
+import com.aura.catalog.domain.service.LyricsService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -28,10 +30,12 @@ import java.util.UUID;
 public class CatalogController {
 
     private final CatalogService catalogService;
+    private final LyricsService lyricsService;
     private final CatalogWebMapper mapper;
 
-    public CatalogController(CatalogService catalogService, CatalogWebMapper mapper) {
+    public CatalogController(CatalogService catalogService, LyricsService lyricsService, CatalogWebMapper mapper) {
         this.catalogService = catalogService;
+        this.lyricsService = lyricsService;
         this.mapper = mapper;
     }
 
@@ -75,6 +79,12 @@ public class CatalogController {
     @GetMapping("/tracks/{id}")
     public TrackResponse getTrack(@PathVariable UUID id) {
         return mapper.toResponse(catalogService.getTrack(id));
+    }
+
+    /** 404 {@code LYRICS_NOT_FOUND} when no provider has text for the track; 502 {@code PROVIDER_UNAVAILABLE} on an outage (nothing cached). */
+    @GetMapping("/tracks/{id}/lyrics")
+    public LyricsResponse getTrackLyrics(@PathVariable UUID id) {
+        return mapper.toResponse(lyricsService.getLyrics(id));
     }
 
     /**

@@ -69,6 +69,16 @@ aura:
       refresh-after: 30d
       retry-after: 1h
 
+  # Lyrics (todo.md section 2): LRCLIB for dev/MVP (free, keyless, synced text); a licensed provider swaps in
+  # behind the same port before a commercial launch. `none` disables lookups entirely.
+  lyrics:
+    provider: ${LYRICS_PROVIDER:lrclib}
+    retry-missing-after: 30d
+    lrclib:
+      base-url: https://lrclib.net/api
+      user-agent: ${LRCLIB_USER_AGENT:Aura-Music-Platform/0.1 (dev; antoan.0418@gmail.com)}
+      search-duration-tolerance-seconds: 5
+
 resilience4j:
   circuitbreaker:
     instances:
@@ -87,6 +97,13 @@ resilience4j:
         failure-rate-threshold: 80
         wait-duration-in-open-state: 60s
         permitted-number-of-calls-in-half-open-state: 5
+      lrclib:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 3
   # Resilience4j's TimeLimiter runs each call on a pool thread and *interrupts* it on timeout. Calls
   # now deliberately wait in TidalRequestThrottle (spacing, Retry-After pauses), so this has to be
   # far above the HTTP timeouts (spring.http.client.*), which are the real per-request guard.
@@ -96,6 +113,8 @@ resilience4j:
         timeout-duration: 120s
       tidal-background:
         timeout-duration: 300s
+      lrclib:
+        timeout-duration: 30s
 
 management:
   endpoints:

@@ -5,11 +5,13 @@ import com.aura.catalog.adapter.web.dto.AlbumSummaryResponse;
 import com.aura.catalog.adapter.web.dto.ArtistResponse;
 import com.aura.catalog.adapter.web.dto.ArtistSummaryResponse;
 import com.aura.catalog.adapter.web.dto.ArtworkResponse;
+import com.aura.catalog.adapter.web.dto.LyricsResponse;
 import com.aura.catalog.adapter.web.dto.SearchResponse;
 import com.aura.catalog.adapter.web.dto.TrackResponse;
 import com.aura.catalog.domain.model.Album;
 import com.aura.catalog.domain.model.Artist;
 import com.aura.catalog.domain.model.Artwork;
+import com.aura.catalog.domain.model.Lyrics;
 import com.aura.catalog.domain.model.SearchResult;
 import com.aura.catalog.domain.model.Track;
 import org.springframework.stereotype.Component;
@@ -75,5 +77,17 @@ public class CatalogWebMapper {
 
     private ArtworkResponse toResponse(Artwork artwork) {
         return artwork == null ? null : new ArtworkResponse(artwork.url(), artwork.width(), artwork.height());
+    }
+
+    public LyricsResponse toResponse(Lyrics lyrics) {
+        return new LyricsResponse(
+                lyrics.trackId(),
+                lyrics.provider().name(),
+                lyrics.instrumental(),
+                lyrics.hasSynced()
+                        ? lyrics.synced().stream().map(l -> new LyricsResponse.SyncedLineResponse(l.timeMs(), l.text())).toList()
+                        : null,
+                lyrics.hasPlain() ? lyrics.plain() : null
+        );
     }
 }

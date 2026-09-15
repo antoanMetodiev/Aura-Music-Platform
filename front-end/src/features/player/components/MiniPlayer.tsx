@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { joinArtists } from "@/lib/utils/format";
 import { ArtworkImage } from "@/components/common/ArtworkImage";
+import { useUiStore } from "@/lib/store/ui-store";
 import { usePlayerStore } from "../store/player-store";
 
 /**
@@ -18,6 +19,7 @@ export function MiniPlayer({ className }: { className?: string }) {
   const positionMs = usePlayerStore((s) => s.positionMs);
   const toggle = usePlayerStore((s) => s.toggle);
   const next = usePlayerStore((s) => s.next);
+  const openFullscreen = useUiStore((s) => s.setFullscreenPlayerOpen);
 
   if (!current) return null;
   const progress = Math.min(100, (positionMs / current.durationMs) * 100);
@@ -26,10 +28,10 @@ export function MiniPlayer({ className }: { className?: string }) {
     <div className={cn("px-2 md:hidden", className)}>
       <div className="relative flex h-14 items-center gap-3 overflow-hidden rounded-lg border border-border bg-elevated pr-1 pl-2 shadow-[0_-8px_30px_-12px_rgba(0,0,0,0.8)]">
         <ArtworkImage artwork={current.artwork} alt="" seed={current.id} sizes="40px" className="size-10 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{current.title}</p>
-          <p className="truncate text-xs text-muted-foreground">{joinArtists(current.artists)}</p>
-        </div>
+        <button type="button" onClick={() => openFullscreen(true)} aria-label={t("fullscreen")} className="min-w-0 flex-1 text-left">
+          <span className="block truncate text-sm font-medium">{current.title}</span>
+          <span className="block truncate text-xs text-muted-foreground">{joinArtists(current.artists)}</span>
+        </button>
         <button type="button" aria-label={t("saveToLiked")} className="grid size-10 place-items-center text-muted-foreground">
           <Heart className="size-5" />
         </button>

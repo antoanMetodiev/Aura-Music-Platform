@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { ApiError } from "@/lib/api/client";
 import { useUiStore } from "@/lib/store/ui-store";
 import { resolvePlaybackSource } from "../api/playbackApi";
-import { useVideoSurfaceStore } from "../store/video-surface-store";
+import { selectActiveSlot, useVideoSurfaceStore } from "../store/video-surface-store";
 import { VideoSurfaceOverlay } from "./VideoSurfaceOverlay";
 import { createYouTubePlayer, loadYouTubeIframeApi, YouTubePlayerState, type YouTubePlayer } from "../lib/youtubeIframeApi";
 import { usePlayerStore } from "../store/player-store";
@@ -239,12 +239,12 @@ export function PlaybackEngine() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Video surface: while the Now Playing panel asks for video, keep the iframe pinned over the box
-  // it registered (measured every frame — panels resize, the page scrolls). Otherwise park it
+  // Video surface: while the Now Playing panel (or the full-screen player) asks for video, keep the
+  // iframe pinned over the box it registered (measured every frame — panels resize, the page scrolls). Otherwise park it
   // off-screen at 1x1. The iframe is never moved in the DOM (that would reload it and cut the
   // audio); only the wrapper's position changes.
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const slot = useVideoSurfaceStore((s) => s.slot);
+  const slot = useVideoSurfaceStore(selectActiveSlot);
   const videoWanted = useUiStore((s) => s.nowPlayingVideo);
   const showVideo = videoWanted && !!slot && !!current;
 
@@ -293,7 +293,7 @@ export function PlaybackEngine() {
     <div
       ref={wrapperRef}
       aria-hidden
-      className="pointer-events-none fixed bottom-0 right-0 z-30 size-px overflow-hidden rounded-lg bg-black opacity-0 [filter:grayscale(1)_contrast(1.08)]"
+      className="pointer-events-none fixed bottom-0 right-0 z-40 size-px overflow-hidden rounded-lg bg-black opacity-0 [filter:grayscale(1)_contrast(1.08)]"
     >
       {/* Replaced by the YouTube iframe (same id) once the API is ready; sized/cropped from the effect above. */}
       <div id={HOST_ELEMENT_ID} className="absolute" />

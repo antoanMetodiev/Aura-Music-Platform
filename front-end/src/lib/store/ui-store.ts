@@ -16,6 +16,8 @@ interface UiState {
   /** Now Playing panel shows the (monochrome) video instead of the artwork. */
   nowPlayingVideo: boolean;
   mobilePlayerExpanded: boolean;
+  /** Full-screen "Now playing" with lyrics (FullscreenPlayer). Session-only, never persisted. */
+  fullscreenPlayerOpen: boolean;
   /** True while a panel edge is being dragged — panels drop their width transition so they track the pointer. */
   resizing: boolean;
 }
@@ -29,6 +31,7 @@ interface UiActions {
   setRightPanelTab: (tab: RightPanelTab) => void;
   setNowPlayingVideo: (video: boolean) => void;
   setMobilePlayerExpanded: (open: boolean) => void;
+  setFullscreenPlayerOpen: (open: boolean) => void;
   setResizing: (resizing: boolean) => void;
 }
 
@@ -44,6 +47,7 @@ export const useUiStore = create<UiState & UiActions>()(
       rightPanelTab: "friends",
       nowPlayingVideo: false,
       mobilePlayerExpanded: false,
+      fullscreenPlayerOpen: false,
       resizing: false,
 
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
@@ -64,6 +68,7 @@ export const useUiStore = create<UiState & UiActions>()(
       setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
       setNowPlayingVideo: (video) => set({ nowPlayingVideo: video }),
       setMobilePlayerExpanded: (open) => set({ mobilePlayerExpanded: open }),
+      setFullscreenPlayerOpen: (open) => set({ fullscreenPlayerOpen: open }),
       setResizing: (resizing) => set({ resizing }),
     }),
     {

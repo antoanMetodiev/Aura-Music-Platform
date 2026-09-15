@@ -1,5 +1,6 @@
 package com.aura.catalog.adapter.web;
 
+import com.aura.catalog.adapter.provider.lrclib.LrclibApiClient;
 import com.aura.catalog.adapter.provider.tidal.TidalApiClient;
 import com.aura.catalog.adapter.web.dto.ApiError;
 import com.aura.catalog.config.RequestIdFilter;
@@ -34,6 +35,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> providerUnavailable(ProviderUnavailableException e) {
         log.warn("Upstream provider unavailable: {}", e.getMessage());
         return error(HttpStatus.BAD_GATEWAY, "PROVIDER_UNAVAILABLE", "The music metadata provider is currently unavailable");
+    }
+
+    @ExceptionHandler(LrclibApiClient.LrclibApiException.class)
+    public ResponseEntity<ApiError> lyricsProviderRejectedRequest(LrclibApiClient.LrclibApiException e) {
+        log.error("LRCLIB rejected a request: {}", e.getMessage());
+        return error(HttpStatus.BAD_GATEWAY, "PROVIDER_ERROR", "The lyrics provider rejected the request");
     }
 
     @ExceptionHandler(TidalApiClient.TidalApiException.class)

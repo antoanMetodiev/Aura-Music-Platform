@@ -1,4 +1,5 @@
 import { routes } from "@/config/routes";
+import { FullscreenPlayer } from "@/features/player/components/FullscreenPlayer";
 import { PlaybackEngine } from "@/features/player/components/PlaybackEngine";
 import { PlayerBar } from "@/features/player/components/PlayerBar";
 import { MiniPlayer } from "@/features/player/components/MiniPlayer";
@@ -32,6 +33,7 @@ export function AppShell({ user, playlists, presence, activity, unreadNotificati
   return (
     <div className="flex h-dvh flex-col bg-background">
       <PlaybackEngine />
+      <FullscreenPlayer />
       <UiStateHydrator />
       <Toaster position="bottom-center" offset={96} />
 

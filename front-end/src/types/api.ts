@@ -81,3 +81,12 @@ export interface PlaybackSourceDto {
   channelTitle: string;
   durationMs: number;
 }
+
+/** `GET /catalog/tracks/{id}/lyrics`. `synced`/`plain` are each null when the provider only has the other. */
+export interface LyricsDto {
+  trackId: string;
+  provider: string;
+  instrumental: boolean;
+  synced: { timeMs: number; text: string }[] | null;
+  plain: string | null;
+}

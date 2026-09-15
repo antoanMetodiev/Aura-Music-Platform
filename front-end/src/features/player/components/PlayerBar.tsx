@@ -21,6 +21,8 @@ export function PlayerBar() {
   const openRightPanel = useUiStore((s) => s.openRightPanel);
   const rightPanelOpen = useUiStore((s) => s.rightPanelOpen);
   const rightPanelTab = useUiStore((s) => s.rightPanelTab);
+  const fullscreenOpen = useUiStore((s) => s.fullscreenPlayerOpen);
+  const setFullscreenOpen = useUiStore((s) => s.setFullscreenPlayerOpen);
 
   const panelActive = (tab: RightPanelTab) => rightPanelOpen && rightPanelTab === tab;
 
@@ -101,7 +103,7 @@ export function PlayerBar() {
 
       {/* Right: extras */}
       <div className="flex items-center justify-end gap-1">
-        <PanelButton label={t("lyrics")} onClick={() => {}}>
+        <PanelButton label={t("lyrics")} active={fullscreenOpen} disabled={!current} onClick={() => setFullscreenOpen(!fullscreenOpen)}>
           <MicVocal className="size-[18px]" />
         </PanelButton>
         <PanelButton label={t("queue")} active={panelActive("queue")} onClick={() => openRightPanel("queue")}>
@@ -111,7 +113,7 @@ export function PlayerBar() {
           <Users className="size-[18px]" />
         </PanelButton>
         <VolumeControl className="ml-2" />
-        <PanelButton label={t("nowPlaying")} active={panelActive("now-playing")} onClick={() => openRightPanel("now-playing")}>
+        <PanelButton label={t("fullscreen")} active={fullscreenOpen} disabled={!current} onClick={() => setFullscreenOpen(!fullscreenOpen)}>
           <Maximize2 className="size-4" />
         </PanelButton>
       </div>
@@ -122,11 +124,13 @@ export function PlayerBar() {
 function PanelButton({
   label,
   active,
+  disabled,
   onClick,
   children,
 }: {
   label: string;
   active?: boolean;
+  disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -138,9 +142,10 @@ function PanelButton({
             type="button"
             aria-label={label}
             aria-pressed={active}
+            disabled={disabled}
             onClick={onClick}
             className={cn(
-              "relative hidden size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:text-foreground xl:grid",
+              "relative hidden size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground xl:grid",
               active && "text-primary-hover hover:text-primary-hover",
             )}
           />
