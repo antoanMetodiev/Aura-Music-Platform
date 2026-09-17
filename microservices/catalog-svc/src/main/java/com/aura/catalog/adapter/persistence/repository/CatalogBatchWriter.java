@@ -102,8 +102,17 @@ public class CatalogBatchWriter {
         sql.append("""
 
                 ON CONFLICT (primary_ref) DO UPDATE SET
-                    name = EXCLUDED.name, artwork_url = EXCLUDED.artwork_url, artwork_width = EXCLUDED.artwork_width,
-                    artwork_height = EXCLUDED.artwork_height, popularity = EXCLUDED.popularity,
+                    name = EXCLUDED.name,
+                    -- Never trade a picture for nothing. The same artist arrives in several shapes:
+                    -- a search result carries their photo, the artist nested inside a track does not,
+                    -- and a discography sync writes hundreds of the latter. Overwriting blindly meant
+                    -- an artist's hero image vanished the moment their catalogue was filled in.
+                    artwork_url = COALESCE(EXCLUDED.artwork_url, catalog.artists.artwork_url),
+                    artwork_width = CASE WHEN EXCLUDED.artwork_url IS NOT NULL
+                                         THEN EXCLUDED.artwork_width ELSE catalog.artists.artwork_width END,
+                    artwork_height = CASE WHEN EXCLUDED.artwork_url IS NOT NULL
+                                          THEN EXCLUDED.artwork_height ELSE catalog.artists.artwork_height END,
+                    popularity = EXCLUDED.popularity,
                     provider_synced_at = now(), updated_at = now()
                 RETURNING *
                 """);
@@ -153,8 +162,14 @@ public class CatalogBatchWriter {
 
                 ON CONFLICT (primary_ref) DO UPDATE SET
                     title = EXCLUDED.title, album_type = EXCLUDED.album_type, release_date = EXCLUDED.release_date,
-                    artist_id = EXCLUDED.artist_id, artwork_url = EXCLUDED.artwork_url, artwork_width = EXCLUDED.artwork_width,
-                    artwork_height = EXCLUDED.artwork_height, explicit = EXCLUDED.explicit,
+                    artist_id = EXCLUDED.artist_id,
+                    -- Same rule as the artists above: a shape that doesn't carry the cover must not erase it.
+                    artwork_url = COALESCE(EXCLUDED.artwork_url, catalog.albums.artwork_url),
+                    artwork_width = CASE WHEN EXCLUDED.artwork_url IS NOT NULL
+                                         THEN EXCLUDED.artwork_width ELSE catalog.albums.artwork_width END,
+                    artwork_height = CASE WHEN EXCLUDED.artwork_url IS NOT NULL
+                                          THEN EXCLUDED.artwork_height ELSE catalog.albums.artwork_height END,
+                    explicit = EXCLUDED.explicit,
                     number_of_tracks = EXCLUDED.number_of_tracks, popularity = EXCLUDED.popularity,
                     provider_synced_at = now(), updated_at = now()
                 RETURNING *
