@@ -50,18 +50,34 @@ public class GraphSyncRepository implements GraphSyncStore {
     }
 
     @Override
-    public Optional<PendingArtist> nextPending(Instant staleBefore) {
+    @org.springframework.transaction.annotation.Transactional
+    public Optional<PendingArtist> claimNext(Instant staleBefore) {
+        // Single UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED), the same shape catalog-svc
+        // claims artists with: stamping inside the select means a second worker can never take the
+        // artist this one is already fetching.
         return jdbc.sql("""
-                        SELECT artist_id, name, popularity, attempted_at
-                        FROM recommendation.artist_graph_sync
-                        WHERE attempted_at IS NULL OR attempted_at < :staleBefore
-                        ORDER BY attempted_at NULLS FIRST, popularity DESC
-                        LIMIT 1
+                        UPDATE recommendation.artist_graph_sync s
+                        SET attempted_at = now()
+                        WHERE s.artist_id = (
+                            SELECT c.artist_id FROM recommendation.artist_graph_sync c
+                            WHERE c.attempted_at IS NULL OR c.attempted_at < :staleBefore
+                            ORDER BY c.attempted_at NULLS FIRST, c.popularity DESC
+                            LIMIT 1
+                            FOR UPDATE OF c SKIP LOCKED
+                        )
+                        RETURNING s.artist_id, s.name, s.popularity, s.attempted_at
                         """)
                 .param("staleBefore", Timestamp.from(staleBefore))
                 .query((rs, n) -> new PendingArtist((UUID) rs.getObject("artist_id"), rs.getString("name"),
                         rs.getDouble("popularity"), instant(rs.getTimestamp("attempted_at"))))
                 .optional();
+    }
+
+    @Override
+    public void release(UUID artistId) {
+        jdbc.sql("UPDATE recommendation.artist_graph_sync SET attempted_at = NULL WHERE artist_id = :artist")
+                .param("artist", artistId)
+                .update();
     }
 
     @Override

@@ -1,0 +1,127 @@
+spring:
+  application:
+    name: worker-svc
+
+  # Loads a local, gitignored `.env` file — same mechanism as every other Aura service.
+  config:
+    import: "optional:file:.env[.properties]"
+
+  # No datasource on purpose. Everything this service produces is written by the service that owns
+  # the schema (Project-Info.md §6); it holds credentials and pacing, not data.
+
+  # RestClient timeouts for every outbound call — providers and our own services alike.
+  http:
+    client:
+      connect-timeout: 3s
+      read-timeout: 8s
+
+server:
+  port: ${PORT:8084}
+
+music:
+  providers:
+    # THIS SERVICE'S OWN TIDAL CREDENTIALS — from the environment, never from catalog.tidal_api_keys.
+    # That separation is the reason this service exists: the background walk used to spend the same
+    # keys the user-facing requests needed, and a first open of an artist page took two minutes.
+    tidal:
+      enabled: ${TIDAL_ENABLED:true}
+      client-id: ${TIDAL_CLIENT_ID:}
+      client-secret: ${TIDAL_CLIENT_SECRET:}
+      country-code: ${TIDAL_COUNTRY_CODE:BG}
+      max-requests-per-second: ${TIDAL_MAX_RPS:3}
+
+    # Likewise this service's own Last.fm key — catalog-svc uses its own for artist biographies while
+    # requests wait; this one grinds through the whole catalog in the background.
+    lastfm:
+      enabled: ${LASTFM_ENABLED:true}
+      api-key: ${LASTFM_API_KEY:}
+      user-agent: ${LASTFM_USER_AGENT:Aura-Music-Platform/0.1 (dev; antoan.0418@gmail.com)}
+      max-requests-per-second: ${LASTFM_MAX_RPS:3}
+      commercial-use-approved: false
+
+aura:
+  # Service-to-service, never through the gateway.
+  services:
+    catalog-url: ${CATALOG_SVC_URL:http://localhost:8081}
+    playback-url: ${PLAYBACK_SVC_URL:http://localhost:8082}
+    recommendation-url: ${RECOMMENDATION_SVC_URL:http://localhost:8083}
+
+  workers:
+    # Pulls every track of every artist in the catalog, most-neglected first.
+    discography:
+      enabled: ${DISCOGRAPHY_WORKER_ENABLED:true}
+      delay-between-artists: ${DISCOGRAPHY_DELAY:500ms}
+      idle-delay: 60s
+      backoff-on-outage: 2m
+
+    # Builds the taste graph: two Last.fm calls per artist.
+    graph:
+      enabled: ${GRAPH_WORKER_ENABLED:true}
+      delay-between-artists: 200ms
+      idle-delay: 10m
+      backoff-on-outage: 2m
+      similar-artists-requested: 60
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      tidal:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 50
+        minimum-number-of-calls: 20
+        failure-rate-threshold: 80
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 5
+      # Our own services. If one is down there is nothing to claim or hand back, so the worker
+      # simply waits — an open breaker here costs nobody a request.
+      lastfm:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 3
+      catalog:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+      recommendation:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+  # Resilience4j's default TimeLimiter is 1s. Calls here deliberately wait their turn in the
+  # throttle, so this sits far above the HTTP timeouts (spring.http.client.*), which are the real
+  # per-request guard.
+  timelimiter:
+    instances:
+      tidal:
+        timeout-duration: 300s
+      lastfm:
+        timeout-duration: 60s
+      catalog:
+        timeout-duration: 30s
+      recommendation:
+        timeout-duration: 30s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# Plain, readable console logging for local dev. Structured JSON logs live in application-prod.yml —
+# activate with SPRING_PROFILES_ACTIVE=prod (Render deployment).

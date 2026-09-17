@@ -3,7 +3,6 @@ package com.aura.recommendation.domain.service;
 import com.aura.recommendation.config.GraphSyncProperties;
 import com.aura.recommendation.domain.model.ArtistRef;
 import com.aura.recommendation.domain.model.ArtistTag;
-import com.aura.recommendation.domain.port.ArtistSimilarityProvider;
 import com.aura.recommendation.domain.port.CatalogLookup;
 import com.aura.recommendation.domain.port.GraphSyncStore;
 import com.aura.recommendation.domain.port.GraphSyncStore.Cursor;
@@ -29,20 +28,19 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Builds the taste graph, one artist at a time, in the background — the only place in this service
- * that talks to the provider at all. Two calls per artist ({@code similar}, {@code topTags}) at the
- * throttled pace; everything a user request does afterwards is SQL over what these calls left behind.
+ * The half of the taste-graph build that belongs here: the queue, resolving the provider's artist
+ * <em>names</em> to our ids, and writing the edges. The other half — the Last.fm credentials, the
+ * pacing and the fetching — lives in worker-svc, which claims an artist, asks the provider, and
+ * posts the raw answer back.
  *
- * <p>The hard part is not fetching but <em>resolving</em>: the provider answers in artist names, we
- * work in ids. A name we have becomes an edge; a name we don't goes into
- * {@code unresolved_artist_names}, which is not an error but a wishlist — an artist the graph keeps
- * pointing at and our catalogue is missing. Feeding those back into catalog search costs TIDAL quota,
- * so it stays a deliberate operation rather than something this worker does on its own.
+ * <p>Resolution deliberately stayed on this side. It needs the catalog and it needs
+ * {@link ArtistNameKeys}, and a worker that resolved names itself would be a second place where the
+ * rule "which spellings count as the same artist" lives — the kind of duplicated domain logic §51
+ * warns about. The worker sends names; we decide what they mean.
  *
- * <p>Outages and "they don't know this artist" are handled very differently: an empty answer is a
- * result and gets recorded, while an outage propagates so the worker backs off and the artist stays
- * at the head of the queue. Recording an outage as "no neighbours" would be permanent damage —
- * nothing would ever ask again.
+ * <p>Outages and "they don't know this artist" stay carefully apart: an empty answer is a result and
+ * gets recorded, while an outage releases the claim so the artist is tried again. Recording an outage
+ * as "no neighbours" would be permanent damage — nothing would ever ask again.
  */
 @Service
 public class ArtistGraphService {
@@ -55,18 +53,15 @@ public class ArtistGraphService {
 
     private final GraphSyncStore sync;
     private final SimilarityGraphStore graph;
-    private final ArtistSimilarityProvider provider;
     private final CatalogLookup catalog;
     private final GraphSyncProperties properties;
     private final Clock clock;
-    private final AtomicReference<PendingArtist> inProgress = new AtomicReference<>();
     private final AtomicReference<SyncOutcome> lastOutcome = new AtomicReference<>();
 
-    public ArtistGraphService(GraphSyncStore sync, SimilarityGraphStore graph, ArtistSimilarityProvider provider,
-                              CatalogLookup catalog, GraphSyncProperties properties, Clock clock) {
+    public ArtistGraphService(GraphSyncStore sync, SimilarityGraphStore graph, CatalogLookup catalog,
+                              GraphSyncProperties properties, Clock clock) {
         this.sync = sync;
         this.graph = graph;
-        this.provider = provider;
         this.catalog = catalog;
         this.properties = properties;
         this.clock = clock;
@@ -92,58 +87,44 @@ public class ArtistGraphService {
         return new SeedOutcome(page.size(), added, false, next);
     }
 
-    /**
-     * Syncs exactly one artist. Empty when every artist's graph is fresh.
-     *
-     * @throws ProviderUnavailableException the provider is down — nothing is recorded and the artist
-     *                                      keeps its place in the queue
-     * @throws CatalogUnavailableException  names could not be resolved, same treatment
-     */
-    public synchronized Optional<SyncOutcome> syncNext() {
-        Instant staleBefore = clock.instant().minus(properties.refreshAfter());
-        Optional<PendingArtist> next = sync.nextPending(staleBefore);
-        if (next.isEmpty()) return Optional.empty();
-        PendingArtist artist = next.get();
-        inProgress.set(artist);
-        try {
-            return Optional.of(syncArtist(artist));
-        } finally {
-            inProgress.set(null);
-        }
+    /** Hands out the next artist whose graph is missing or stale, stamping the claim. */
+    public Optional<PendingArtist> claimNext() {
+        return sync.claimNext(clock.instant().minus(properties.refreshAfter()));
     }
 
-    private SyncOutcome syncArtist(PendingArtist artist) {
-        try {
-            // Both provider calls first, then one write: a failure halfway must not leave an artist
-            // with fresh edges and stale tags.
-            List<ProviderSimilarArtist> similar = provider.similarTo(artist.name(), properties.similarArtistsRequested());
-            List<ProviderTag> tags = provider.topTags(artist.name());
-
-            Resolution resolution = resolve(artist.artistId(), similar);
-            graph.replaceEdges(artist.artistId(), resolution.edges());
-            graph.replaceTags(artist.artistId(), tags.stream().map(t -> new ArtistTag(t.name(), t.count())).toList());
-            if (!resolution.unresolvedNames().isEmpty()) {
-                graph.recordUnresolved(resolution.unresolvedNames());
-            }
-            sync.markSynced(artist.artistId(), resolution.edges().size(), tags.size(), resolution.unresolvedNames().size());
-
-            SyncOutcome outcome = new SyncOutcome(artist.artistId(), artist.name(), resolution.edges().size(),
-                    tags.size(), resolution.unresolvedNames().size(), null, clock.instant());
-            lastOutcome.set(outcome);
-            log.debug("Graph synced for '{}': {} edges, {} tags, {} names we don't have",
-                    artist.name(), resolution.edges().size(), tags.size(), resolution.unresolvedNames().size());
-            return outcome;
-        } catch (ProviderUnavailableException | CatalogUnavailableException e) {
-            // Not this artist's fault — leave the queue untouched so the same artist is retried.
-            throw e;
-        } catch (RuntimeException e) {
-            String error = e.getClass().getSimpleName() + ": " + e.getMessage();
-            sync.markFailed(artist.artistId(), error);
-            SyncOutcome outcome = new SyncOutcome(artist.artistId(), artist.name(), 0, 0, 0, error, clock.instant());
-            lastOutcome.set(outcome);
-            log.warn("Graph sync failed for '{}'", artist.name(), e);
-            return outcome;
+    /**
+     * Stores what the provider said about one artist: the neighbours it could name (resolved to our
+     * artists) and the tags it carries. Names we don't have are recorded as a wishlist rather than
+     * dropped — an artist the graph keeps pointing at is one the catalog is missing.
+     */
+    public SyncOutcome ingest(UUID artistId, String name, List<ProviderSimilarArtist> similar, List<ProviderTag> tags) {
+        Resolution resolution = resolve(artistId, similar);
+        graph.replaceEdges(artistId, resolution.edges());
+        graph.replaceTags(artistId, tags.stream().map(t -> new ArtistTag(t.name(), t.count())).toList());
+        if (!resolution.unresolvedNames().isEmpty()) {
+            graph.recordUnresolved(resolution.unresolvedNames());
         }
+        sync.markSynced(artistId, resolution.edges().size(), tags.size(), resolution.unresolvedNames().size());
+
+        SyncOutcome outcome = new SyncOutcome(artistId, name, resolution.edges().size(), tags.size(),
+                resolution.unresolvedNames().size(), null, clock.instant());
+        lastOutcome.set(outcome);
+        log.debug("Graph synced for '{}': {} edges, {} tags, {} names we don't have",
+                name, resolution.edges().size(), tags.size(), resolution.unresolvedNames().size());
+        return outcome;
+    }
+
+    /** The provider was unreachable — give the claim back, nothing was learnt about this artist. */
+    public void release(UUID artistId, String name, String reason) {
+        sync.release(artistId);
+        lastOutcome.set(new SyncOutcome(artistId, name, 0, 0, 0, reason, clock.instant()));
+        log.warn("Graph sync of '{}' postponed, provider unavailable: {}", name, reason);
+    }
+
+    public void markFailed(UUID artistId, String name, String error) {
+        sync.markFailed(artistId, error);
+        lastOutcome.set(new SyncOutcome(artistId, name, 0, 0, 0, error, clock.instant()));
+        log.warn("Graph sync of '{}' failed: {}", name, error);
     }
 
     /**
@@ -187,12 +168,15 @@ public class ArtistGraphService {
         return new Resolution(List.copyOf(edges.values()), unresolved);
     }
 
-    public long pendingCount() {
-        return sync.pendingCount(clock.instant().minus(properties.refreshAfter()));
+    /** The artist's name as we hold it — the work API takes the caller's word for nothing but the id. */
+    public String nameOf(UUID artistId) {
+        return catalog.findArtist(artistId)
+                .map(ArtistRef::name)
+                .orElseThrow(() -> new SeedNotFoundException("Artist", artistId));
     }
 
-    public Optional<PendingArtist> inProgress() {
-        return Optional.ofNullable(inProgress.get());
+    public long pendingCount() {
+        return sync.pendingCount(clock.instant().minus(properties.refreshAfter()));
     }
 
     public Optional<SyncOutcome> lastOutcome() {

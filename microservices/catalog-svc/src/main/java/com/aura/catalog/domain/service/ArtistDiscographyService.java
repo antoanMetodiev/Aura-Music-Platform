@@ -4,7 +4,6 @@ import com.aura.catalog.config.DiscographySyncProperties;
 import com.aura.catalog.domain.port.CatalogStore;
 import com.aura.catalog.domain.port.DiscographySyncStore;
 import com.aura.catalog.domain.port.DiscographySyncStore.PendingArtist;
-import com.aura.catalog.domain.port.MusicMetadataProvider;
 import com.aura.catalog.domain.port.ProviderTrack;
 import com.aura.catalog.domain.port.UpsertedBatch;
 import org.slf4j.Logger;
@@ -14,23 +13,30 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CompletionException;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Continuous discovery: take the next artist in our catalog whose discography we don't have (or
- * have had for longer than {@code refreshAfter}), pull every track they appear on from the
- * provider, persist all of it. Every track brings its album and its featured/album artists along,
- * and any of those artists we didn't know yet is inserted with no discography — which puts it in
- * the queue for a later pass. The catalog therefore grows on its own from whatever seeds it has
- * (searches, opened albums, anything already in {@code catalog.artists}).
+ * The half of the continuous discography discovery that belongs to catalog-svc: the queue, and
+ * persisting what comes back. The other half — the provider credentials, the pacing and the actual
+ * fetching — lives in worker-svc, which claims an artist here, goes to TIDAL on its own key, and
+ * posts the tracks back.
+ *
+ * <p>It used to be one loop inside this service. Splitting it was not about code structure: the
+ * fetching was spending the same TIDAL credentials the user-facing requests needed, so a user
+ * opening an artist page waited behind the worker's backlog (measured at two minutes). The two sides
+ * now have separate credentials and therefore separate rate-limit budgets.
+ *
+ * <p>What has not changed is where the data lives: every track brings its album and its featured
+ * artists along, and any of those artists we didn't know yet is inserted with no discography — which
+ * puts it in this queue for a later pass. The catalog still grows on its own from whatever seeds it has.
  */
 @Service
 public class ArtistDiscographyService {
 
     private static final Logger log = LoggerFactory.getLogger(ArtistDiscographyService.class);
 
-    public record Outcome(PendingArtist artist, int trackCount, int newArtists, String error, boolean providerUnavailable, Instant at) {
+    public record Outcome(UUID artistId, String name, int trackCount, int newArtists, String error, Instant at) {
         public boolean succeeded() {
             return error == null;
         }
@@ -38,59 +44,66 @@ public class ArtistDiscographyService {
 
     private final DiscographySyncStore queue;
     private final CatalogStore store;
-    private final MusicMetadataProvider metadata;
     private final DiscographySyncProperties properties;
     private final ArtistMergeService artistMerge;
     private final AtomicReference<Outcome> last = new AtomicReference<>();
-    private final AtomicReference<PendingArtist> inProgress = new AtomicReference<>();
 
     public ArtistDiscographyService(DiscographySyncStore queue, CatalogStore store,
-                                    MusicMetadataProvider metadata, DiscographySyncProperties properties,
-                                    ArtistMergeService artistMerge) {
-        this.artistMerge = artistMerge;
+                                    DiscographySyncProperties properties, ArtistMergeService artistMerge) {
         this.queue = queue;
         this.store = store;
-        this.metadata = metadata;
         this.properties = properties;
+        this.artistMerge = artistMerge;
     }
 
-    /** One unit of work: claim → fetch → persist → mark. Empty when there was nothing to claim. */
-    public Optional<Outcome> syncNext() {
-        Optional<PendingArtist> claimed = queue.claimNext(properties.refreshAfter(), properties.retryAfter());
-        if (claimed.isEmpty()) return Optional.empty();
-        PendingArtist artist = claimed.get();
-        inProgress.set(artist);
-        try {
-            long artistsBefore = queue.stats(properties.refreshAfter()).artistsTotal();
-            List<ProviderTrack> tracks = metadata.getArtistTracks(artist.ref().providerResourceId());
-            UpsertedBatch persisted = store.upsertBatch(tracks, List.of(), List.of());
-            queue.markSynced(artist.id(), persisted.tracks().size());
-            // The tracks just stored are the evidence that same-named profiles are one act (V14).
-            artistMerge.mergeDuplicatesNamed(artist.name());
-            long newArtists = queue.stats(properties.refreshAfter()).artistsTotal() - artistsBefore;
-            Outcome outcome = new Outcome(artist, persisted.tracks().size(), (int) newArtists, null, false, Instant.now());
-            log.info("Discography sync: '{}' -> {} tracks, {} new artists discovered", artist.name(), outcome.trackCount(), newArtists);
-            last.set(outcome);
-            return Optional.of(outcome);
-        } catch (RuntimeException e) {
-            Throwable root = e instanceof CompletionException && e.getCause() != null ? e.getCause() : e;
-            String reason = root.getClass().getSimpleName() + ": " + root.getMessage();
-            if (root instanceof ProviderUnavailableException) {
-                // Nothing is known about the artist — put it back untouched; the worker backs off.
-                queue.release(artist.id());
-                log.warn("Discography sync of '{}' postponed, provider unavailable: {}", artist.name(), reason);
-                Outcome outcome = new Outcome(artist, 0, 0, reason, true, Instant.now());
-                last.set(outcome);
-                return Optional.of(outcome);
-            }
-            queue.markFailed(artist.id(), reason);
-            Outcome outcome = new Outcome(artist, 0, 0, reason, false, Instant.now());
-            log.warn("Discography sync of '{}' failed, will retry after {}: {}", artist.name(), properties.retryAfter(), reason);
-            last.set(outcome);
-            return Optional.of(outcome);
-        } finally {
-            inProgress.set(null);
-        }
+    /**
+     * Hands out the next artist due a sync and stamps the claim, so a second worker (or a retry of
+     * the same one) doesn't pick it up again. Empty when there is nothing to do.
+     */
+    public Optional<PendingArtist> claimNext() {
+        return queue.claimNext(properties.refreshAfter(), properties.retryAfter());
+    }
+
+    /**
+     * Persists a fetched discography: the tracks, everything they drag in with them, and the sync
+     * stamp. Same-named artist profiles are merged right after — the tracks just stored are the
+     * evidence that they are one act (V14).
+     */
+    public Outcome ingest(UUID artistId, String name, List<ProviderTrack> tracks) {
+        long artistsBefore = queue.stats(properties.refreshAfter()).artistsTotal();
+        UpsertedBatch persisted = store.upsertBatch(tracks, List.of(), List.of());
+        queue.markSynced(artistId, persisted.tracks().size());
+        artistMerge.mergeDuplicatesNamed(name);
+        long newArtists = queue.stats(properties.refreshAfter()).artistsTotal() - artistsBefore;
+
+        Outcome outcome = new Outcome(artistId, name, persisted.tracks().size(), (int) newArtists, null, Instant.now());
+        log.info("Discography sync: '{}' -> {} tracks, {} new artists discovered", name, outcome.trackCount(), newArtists);
+        last.set(outcome);
+        return outcome;
+    }
+
+    /**
+     * The worker couldn't reach the provider. Nothing is known about the artist, so the claim is
+     * undone rather than recorded as an outcome — it goes back to the front of the queue.
+     */
+    public void release(UUID artistId, String name, String reason) {
+        queue.release(artistId);
+        log.warn("Discography sync of '{}' postponed, provider unavailable: {}", name, reason);
+        last.set(new Outcome(artistId, name, 0, 0, reason, Instant.now()));
+    }
+
+    /** The fetch itself failed for a reason that is about this artist; it is retried after {@code retryAfter}. */
+    public void markFailed(UUID artistId, String name, String error) {
+        queue.markFailed(artistId, error);
+        log.warn("Discography sync of '{}' failed, will retry after {}: {}", name, properties.retryAfter(), error);
+        last.set(new Outcome(artistId, name, 0, 0, error, Instant.now()));
+    }
+
+    /** The artist's name as we hold it — the work API takes the caller's word for nothing but the id. */
+    public String nameOf(UUID artistId) {
+        return store.findArtistById(artistId)
+                .map(com.aura.catalog.domain.model.Artist::name)
+                .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", artistId));
     }
 
     public DiscographySyncStore.SyncStats stats() {
@@ -103,9 +116,5 @@ public class ArtistDiscographyService {
 
     public Optional<Outcome> lastOutcome() {
         return Optional.ofNullable(last.get());
-    }
-
-    public Optional<PendingArtist> inProgress() {
-        return Optional.ofNullable(inProgress.get());
     }
 }

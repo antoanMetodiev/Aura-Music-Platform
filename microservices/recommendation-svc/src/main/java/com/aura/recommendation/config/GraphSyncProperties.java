@@ -8,24 +8,17 @@ import org.springframework.validation.annotation.Validated;
 import java.time.Duration;
 
 /**
- * The background worker that builds the taste graph (see {@code ArtistGraphService}). Two provider
- * calls per artist at the configured pace is the entire cost of this service's intelligence.
+ * Queue semantics for the taste-graph build. The build itself runs in worker-svc on its own Last.fm
+ * key — it claims an artist here, asks the provider and posts the answer back — so the pacing and the
+ * credentials live there. What stays here is how long an answer is good for and how big a seeding
+ * round is.
  */
 @Validated
 @ConfigurationProperties(prefix = "aura.recommendations.graph-sync")
 public record GraphSyncProperties(
-        @DefaultValue("true") boolean enabled,
-        /** Artists fetched from catalog-svc per seeding step — cheap, no provider calls involved. */
+        /** Artists pulled from catalog-svc per seeding round — cheap, no provider calls involved. */
         @DefaultValue("200") int seedPageSize,
-        /** Pause between artist syncs, on top of the provider throttle. */
-        @NotNull @DefaultValue("200ms") Duration delayBetweenArtists,
-        /** Pause when the whole catalog's graph is fresh and there is nothing to seed. */
-        @NotNull @DefaultValue("10m") Duration idleDelay,
         /** An artist's graph is asked for again after this long — tastes and the provider's data move slowly. */
-        @NotNull @DefaultValue("60d") Duration refreshAfter,
-        /** Pause after a failed step (provider outage, catalog-svc down). */
-        @NotNull @DefaultValue("2m") Duration backoffOnOutage,
-        /** Neighbours requested per artist. The provider returns them ordered, so this is a depth choice. */
-        @DefaultValue("60") int similarArtistsRequested
+        @NotNull @DefaultValue("60d") Duration refreshAfter
 ) {
 }

@@ -31,10 +31,14 @@ public interface GraphSyncStore {
     int seed(Collection<ArtistRef> artists);
 
     /**
-     * The next artist due: never-attempted first, then those last attempted before {@code staleBefore},
-     * most popular first within each. Empty when every artist's graph is fresh.
+     * Claims the next artist due — never-attempted first, then those last attempted before
+     * {@code staleBefore}, most popular first within each — and stamps the attempt, so the worker
+     * that took it is the only one holding it. Empty when every artist's graph is fresh.
      */
-    Optional<PendingArtist> nextPending(Instant staleBefore);
+    Optional<PendingArtist> claimNext(Instant staleBefore);
+
+    /** Undo a claim without recording an outcome — the provider was unreachable, nothing was learnt. */
+    void release(UUID artistId);
 
     long pendingCount(Instant staleBefore);
 
