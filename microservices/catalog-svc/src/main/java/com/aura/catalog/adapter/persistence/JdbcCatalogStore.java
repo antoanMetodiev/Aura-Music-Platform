@@ -152,6 +152,11 @@ public class JdbcCatalogStore implements CatalogStore {
     }
 
     @Override
+    public List<Artist> findCanonicalArtistsByPopularityBelow(double popularityBelow, UUID afterId, int limit) {
+        return artists.findCanonicalByPopularityBelow(popularityBelow, afterId, limit);
+    }
+
+    @Override
     public List<Artist> findArtistsByExactNames(Collection<String> names) {
         return artists.findByExactNames(names);
     }

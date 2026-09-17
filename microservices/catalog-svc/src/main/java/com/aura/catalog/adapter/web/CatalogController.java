@@ -158,11 +158,49 @@ public class CatalogController {
         return mapper.toResponse(artistAboutService.getAbout(id, lang));
     }
 
+    /**
+     * {@code source=local} skips the first-open discography pull — our own catalog only, never a
+     * provider call. Service-to-service consumers that read many artists per request use it.
+     */
     @GetMapping("/artists/{id}/top-tracks")
     public List<TrackResponse> getArtistTopTracks(@PathVariable UUID id,
-                                                  @RequestParam(value = "limit", required = false) Integer limit) {
+                                                  @RequestParam(value = "limit", required = false) Integer limit,
+                                                  @RequestParam(value = "source", required = false) String source) {
         int effective = limit == null ? 10 : Math.min(Math.max(limit, 1), 50);
-        return catalogService.getArtistTopTracks(id, effective).stream().map(mapper::toResponse).toList();
+        return catalogService.getArtistTopTracks(id, effective, "local".equals(source)).stream().map(mapper::toResponse).toList();
+    }
+
+    /**
+     * Keyset walk over the canonical artists, most popular first (service-to-service, for workers that
+     * visit every artist). Continue from the last item's {@code popularity}/{@code id}.
+     */
+    @GetMapping("/artists/scan")
+    public List<ArtistResponse> scanArtists(
+            @RequestParam(value = "popularityBelow", required = false) Double popularityBelow,
+            @RequestParam(value = "afterId", required = false) UUID afterId,
+            @RequestParam(value = "limit", required = false) Integer limit
+    ) {
+        // Popularity is 0..1, so anything above 1 with the max UUID means "from the very top".
+        return catalogService.scanArtistsByPopularity(
+                        popularityBelow == null ? 2.0 : popularityBelow,
+                        afterId == null ? new UUID(-1L, -1L) : afterId,
+                        limit == null ? 50 : limit)
+                .stream().map(mapper::toFullResponse).toList();
+    }
+
+    /**
+     * Resolves artist names to our own artists — one canonical row per distinct name, unknown names
+     * simply absent. How a provider taste graph expressed in names is mapped onto our ids.
+     */
+    @GetMapping("/artists/by-name")
+    public List<ArtistResponse> getArtistsByName(@RequestParam("name") List<String> names) {
+        if (names == null || names.isEmpty()) {
+            throw new IllegalArgumentException("'name' must not be empty");
+        }
+        if (names.size() > 200) {
+            throw new IllegalArgumentException("At most 200 names per request, got " + names.size());
+        }
+        return catalogService.findArtistsByNames(names).stream().map(mapper::toFullResponse).toList();
     }
 
     @GetMapping("/artists/{id}/albums")

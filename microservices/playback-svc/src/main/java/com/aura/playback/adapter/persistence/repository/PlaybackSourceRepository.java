@@ -53,6 +53,21 @@ public class PlaybackSourceRepository implements PlaybackSourceStore {
     }
 
     @Override
+    public java.util.List<PlaybackSource> findVerifiedByTrackIds(java.util.Collection<UUID> trackIds, PlaybackProvider provider) {
+        if (trackIds.isEmpty()) return java.util.List.of();
+        // Bound as text[] and cast: pgjdbc encodes String[] natively, UUID[] it does not.
+        String[] ids = trackIds.stream().map(UUID::toString).toArray(String[]::new);
+        return jdbc.sql("""
+                        SELECT * FROM playback.track_sources
+                        WHERE track_id = ANY(CAST(:ids AS uuid[])) AND provider = :provider AND is_verified
+                        """)
+                .param("ids", ids)
+                .param("provider", provider.name())
+                .query(PlaybackSourceRepository::mapRow)
+                .list();
+    }
+
+    @Override
     public PlaybackSource upsert(PlaybackSource source) {
         return jdbc.sql("""
                         INSERT INTO playback.track_sources

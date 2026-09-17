@@ -68,6 +68,9 @@ public interface CatalogStore {
     List<Artist> findArtistsByIds(Collection<UUID> ids);
 
     /** Artists whose name equals one of these, case-insensitively — a canonical over an alias, then the most popular, per name. */
+    /** Keyset walk over the canonical artists, most popular first (aliases skipped — see V14). */
+    List<Artist> findCanonicalArtistsByPopularityBelow(double popularityBelow, UUID afterId, int limit);
+
     List<Artist> findArtistsByExactNames(Collection<String> names);
 
     // ── Duplicate artists (V14) ────────────────────────────────────────────────────────────

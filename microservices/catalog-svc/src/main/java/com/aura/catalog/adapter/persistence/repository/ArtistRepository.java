@@ -141,6 +141,26 @@ public class ArtistRepository {
     // ── Duplicate artists (V14) ────────────────────────────────────────────────────────────
 
     /** Every row with this name (case-insensitive), canonical or alias. */
+    /**
+     * Keyset walk over the canonical artists, most popular first — the worklist for consumers that
+     * must visit every artist exactly once (recommendation-svc's similarity-graph worker). Aliases
+     * (V14) are skipped: a duplicate profile is the same act, and its graph would be the same graph.
+     */
+    public List<Artist> findCanonicalByPopularityBelow(double popularityBelow, UUID afterId, int limit) {
+        List<UUID> ids = jdbc.sql("""
+                        SELECT id FROM catalog.artists
+                        WHERE canonical_artist_id IS NULL AND (popularity, id) < (:popularity, :afterId)
+                        ORDER BY popularity DESC, id DESC
+                        LIMIT :limit
+                        """)
+                .param("popularity", popularityBelow)
+                .param("afterId", afterId)
+                .param("limit", limit)
+                .query(UUID.class)
+                .list();
+        return findByIds(ids);
+    }
+
     public List<Artist> findByNormalizedName(String name) {
         List<UUID> ids = jdbc.sql("SELECT id FROM catalog.artists WHERE lower(name) = :name ORDER BY popularity DESC")
                 .param("name", name.strip().toLowerCase(Locale.ROOT))

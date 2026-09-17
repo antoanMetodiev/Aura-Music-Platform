@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
@@ -459,8 +460,38 @@ public class CatalogService {
      * complete rather than showing the two tracks a search happened to bring in.
      */
     public List<Track> getArtistTopTracks(UUID artistId, int limit) {
-        List<UUID> group = readyGroup(artistId);
+        return getArtistTopTracks(artistId, limit, false);
+    }
+
+    /**
+     * {@code localOnly} answers from our own catalog alone — no discography pull, no provider call,
+     * no merge. Service-to-service consumers that read many artists in one request (recommendation-svc
+     * picking tracks for twenty candidate artists) must never trigger twenty TIDAL discography syncs.
+     */
+    public List<Track> getArtistTopTracks(UUID artistId, int limit, boolean localOnly) {
+        List<UUID> group = localOnly ? localGroup(artistId) : readyGroup(artistId);
         return dedupeReleases(store.findTracksByArtistIds(group, limit * 4), limit);
+    }
+
+    /** The canonical artist's id plus its aliases, exactly as the catalog has them right now. */
+    private List<UUID> localGroup(UUID artistId) {
+        Artist artist = canonical(store.findArtistById(artistId)
+                .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", artistId)));
+        return store.findArtistGroupIds(artist.id());
+    }
+
+    /** Local-only walk over the canonical artists, most popular first — for background consumers. */
+    public List<Artist> scanArtistsByPopularity(double popularityBelow, UUID afterId, int limit) {
+        return store.findCanonicalArtistsByPopularityBelow(popularityBelow, afterId, Math.min(Math.max(limit, 1), 200));
+    }
+
+    /**
+     * Resolves provider-supplied artist <em>names</em> to our own artists — one canonical row per
+     * distinct name, names we don't have simply missing from the result. Never a provider call: this
+     * is how a taste graph expressed in names (Last.fm) is mapped onto our ids.
+     */
+    public List<Artist> findArtistsByNames(Collection<String> names) {
+        return store.findArtistsByExactNames(names).stream().map(this::canonical).map(this::withBorrowedArtwork).toList();
     }
 
     /** Albums, EPs and singles credited to the artist (any profile in the group), newest first. */

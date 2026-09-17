@@ -24,6 +24,11 @@ spring:
               predicates:
                 - Path=/api/v1/playback/**
 
+            - id: recommendation-svc
+              uri: ${RECOMMENDATION_SVC_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/recommendations/**
+
           globalcors:
             cors-configurations:
               "[/**]":

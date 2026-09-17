@@ -78,6 +78,14 @@ public class PlaybackResolverService {
         return source;
     }
 
+    /**
+     * The verified sources among {@code trackIds} — a pure read. Nothing is resolved, so this costs no
+     * provider quota however many ids are asked about (§20); it answers "which of these are playable?".
+     */
+    public List<PlaybackSource> findVerified(List<UUID> trackIds) {
+        return store.findVerifiedByTrackIds(trackIds, PlaybackProvider.YOUTUBE);
+    }
+
     private PlaybackSource coalescedResolve(UUID trackId) {
         CompletableFuture<PlaybackSource> future = pending.computeIfAbsent(trackId,
                 id -> CompletableFuture.supplyAsync(() -> doResolve(id)));

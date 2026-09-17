@@ -1,0 +1,136 @@
+spring:
+  application:
+    name: recommendation-svc
+
+  # Loads a local, gitignored `.env` file — same mechanism as every other Aura service.
+  config:
+    import: "optional:file:.env[.properties]"
+
+  # Same Supabase Postgres as the other services, own schema (`recommendation`) — always through the
+  # Supavisor pooler (port 6543, transaction mode), never the direct connection.
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 1
+      pool-name: recommendation-svc-pool
+
+  flyway:
+    default-schema: recommendation
+    schemas: recommendation
+    locations: classpath:db/migration
+
+  # RestClient timeouts for every outbound HTTP call (Last.fm, catalog-svc, playback-svc).
+  http:
+    client:
+      connect-timeout: 3s
+      read-timeout: 8s
+
+server:
+  port: ${PORT:8083}
+
+music:
+  providers:
+    # Taste data: similar artists and community tags. Free key, ~5 req/s, NON-COMMERCIAL by default —
+    # `commercial-use-approved` is the gate to clear before this data is used for anything beyond
+    # serving our own UI (Project-Info.md §24 forbids provider-restricted content in ML/embeddings).
+    lastfm:
+      enabled: ${LASTFM_ENABLED:true}
+      api-key: ${LASTFM_API_KEY:}
+      user-agent: ${LASTFM_USER_AGENT:Aura-Music-Platform/0.1 (dev; antoan.0418@gmail.com)}
+      max-requests-per-second: ${LASTFM_MAX_RPS:3}
+      commercial-use-approved: false
+
+aura:
+  # Both talk to the services directly (service-to-service), not through the gateway.
+  catalog-client:
+    base-url: ${CATALOG_SVC_URL:http://localhost:8081}
+  playback-client:
+    base-url: ${PLAYBACK_SVC_URL:http://localhost:8082}
+
+  recommendations:
+    # Candidate generation
+    max-similar-artists: 40
+    reverse-edge-factor: 0.6
+    max-shared-tag-artists: 20
+    seed-tags-used: 5
+    tracks-per-candidate-artist: 8
+    # Ranking
+    artist-score-weight: 100
+    track-popularity-weight: 35
+    playable-bonus: 15
+    per-artist-decay: 0.55
+    max-tracks-per-artist: 3
+    drop-unplayable: true
+    # Serving
+    feed-memory-ttl: 15m
+    feed-memory-entries: 500
+    default-limit: 20
+    max-limit: 100
+
+    # The background worker that builds the graph: two provider calls per artist, paced. Everything
+    # a user request does is SQL over what it left behind.
+    graph-sync:
+      enabled: ${GRAPH_SYNC_ENABLED:true}
+      seed-page-size: 200
+      delay-between-artists: 200ms
+      idle-delay: 10m
+      refresh-after: 60d
+      backoff-on-outage: 2m
+      similar-artists-requested: 60
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      lastfm:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 3
+      catalog:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+      # playback-svc being down only costs us the playability filter, so this one may open freely.
+      playback:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+  # Resilience4j's default TimeLimiter is 1s, which is far below what a throttled Last.fm call takes:
+  # the call deliberately waits its turn before going out, so this has to be well above the HTTP
+  # timeouts (spring.http.client.*), which are the real per-request guard.
+  timelimiter:
+    instances:
+      lastfm:
+        timeout-duration: 60s
+      catalog:
+        timeout-duration: 10s
+      playback:
+        timeout-duration: 10s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# Plain, readable console logging for local dev (IntelliJ, ./gradlew bootRun). Structured JSON logs
+# live in application-prod.yml — activate with SPRING_PROFILES_ACTIVE=prod (Render deployment).
