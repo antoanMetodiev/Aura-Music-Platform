@@ -30,17 +30,22 @@ public class ArtistDiscographyRepository implements DiscographySyncStore {
 
     @Override
     @Transactional
-    public Optional<PendingArtist> claimNext(Duration refreshAfter, Duration retryAfter) {
+    public Optional<PendingArtist> claimNext(Duration refreshAfter, Duration retryAfter, Lane lane) {
         return jdbc.sql("""
                         UPDATE catalog.artists a
                         SET discography_attempted_at = now()
                         WHERE a.id = (
                             SELECT c.id FROM catalog.artists c
                             JOIN catalog.artist_provider_refs r ON r.artist_id = c.id AND r.provider = :provider
-                            WHERE (c.discography_synced_at IS NULL OR c.discography_synced_at < now() - CAST(:refreshAfter AS interval))
+                            WHERE (c.discography_synced_at IS NULL
+                                   OR c.discography_synced_at < now() - CAST(:refreshAfter AS interval)
+                                   -- A quick pull unblocked the page; the walk still owes it the rest (V17).
+                                   OR c.discography_depth = 'QUICK')
                               AND (c.discography_attempted_at IS NULL OR c.discography_attempted_at < now() - CAST(:retryAfter AS interval))
+                              AND (NOT :onDemandOnly OR c.discography_requested_at IS NOT NULL)
                             -- An artist someone has open right now goes first, whatever the walk was
-                            -- about to do (V16); the rest keep the original order.
+                            -- about to do (V16); the rest keep the original order, which leaves a
+                            -- quick-synced artist at the back — it already has something to show.
                             ORDER BY (c.discography_requested_at IS NOT NULL) DESC,
                                      c.discography_requested_at DESC NULLS LAST,
                                      c.discography_attempted_at NULLS FIRST, c.created_at
@@ -48,14 +53,20 @@ public class ArtistDiscographyRepository implements DiscographySyncStore {
                             FOR UPDATE OF c SKIP LOCKED
                         )
                         RETURNING a.id, a.name,
+                            -- Somebody is waiting and we have nothing to show them yet: fetch the cheap
+                            -- version. Whichever lane won the claim, the answer is the same.
+                            CASE WHEN a.discography_requested_at IS NOT NULL AND a.discography_synced_at IS NULL
+                                 THEN 'QUICK' ELSE 'FULL' END AS depth,
                             (SELECT provider_resource_id FROM catalog.artist_provider_refs
                              WHERE artist_id = a.id AND provider = :provider) AS provider_resource_id
                         """)
                 .param("provider", Provider.TIDAL.name())
                 .param("refreshAfter", toInterval(refreshAfter))
                 .param("retryAfter", toInterval(retryAfter))
+                .param("onDemandOnly", lane == Lane.ON_DEMAND)
                 .query((rs, n) -> new PendingArtist((UUID) rs.getObject("id"), rs.getString("name"),
-                        new ProviderReference(Provider.TIDAL, rs.getString("provider_resource_id"))))
+                        new ProviderReference(Provider.TIDAL, rs.getString("provider_resource_id")),
+                        Depth.valueOf(rs.getString("depth"))))
                 .optional();
     }
 
@@ -104,14 +115,17 @@ public class ArtistDiscographyRepository implements DiscographySyncStore {
     }
 
     @Override
-    public void markSynced(UUID artistId, int trackCount) {
+    public void markSynced(UUID artistId, int trackCount, Depth depth) {
+        // The request mark is cleared either way: a quick pull is what the person opening the page
+        // was waiting for, so it has served its purpose and must not keep jumping the queue.
         jdbc.sql("""
                         UPDATE catalog.artists
                         SET discography_synced_at = now(), discography_error = NULL, discography_track_count = :count,
-                            discography_requested_at = NULL
+                            discography_depth = :depth, discography_requested_at = NULL
                         WHERE id = :id
                         """)
                 .param("count", trackCount)
+                .param("depth", depth.name())
                 .param("id", artistId)
                 .update();
     }
@@ -136,10 +150,15 @@ public class ArtistDiscographyRepository implements DiscographySyncStore {
         return jdbc.sql("""
                         SELECT
                             (SELECT count(*) FROM catalog.artists) AS artists_total,
+                            -- "Synced" means fully synced: a quick pull is enough for the page but the
+                            -- walk still owes this artist the rest, so it counts as pending (V17).
                             (SELECT count(*) FROM catalog.artists
-                             WHERE discography_synced_at >= now() - CAST(:refreshAfter AS interval)) AS artists_synced,
+                             WHERE discography_synced_at >= now() - CAST(:refreshAfter AS interval)
+                               AND discography_depth = 'FULL') AS artists_synced,
                             (SELECT count(*) FROM catalog.artists
-                             WHERE discography_synced_at IS NULL OR discography_synced_at < now() - CAST(:refreshAfter AS interval)) AS artists_pending,
+                             WHERE discography_synced_at IS NULL
+                                OR discography_synced_at < now() - CAST(:refreshAfter AS interval)
+                                OR discography_depth = 'QUICK') AS artists_pending,
                             (SELECT count(*) FROM catalog.artists WHERE discography_error IS NOT NULL) AS artists_failed,
                             (SELECT count(*) FROM catalog.tracks) AS tracks_total
                         """)

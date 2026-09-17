@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -21,19 +22,19 @@ import java.util.List;
 @RequestMapping("/api/v1/workers")
 public class WorkerStatusController {
 
-    public record WorkerStatus(String name, String provider, boolean enabled, boolean running,
-                               boolean credentialsConfigured, Instant startedAt, double currentRequestsPerSecond,
-                               String inProgress, long unitsSinceStart, long producedSinceStart, Object lastOutcome) {
+    public record WorkerStatus(String name, String provider, boolean running, boolean credentialsConfigured,
+                               Instant startedAt, double currentRequestsPerSecond, String inProgress,
+                               long unitsSinceStart, long producedSinceStart, Object lastOutcome) {
     }
 
-    private final ObjectProvider<DiscographyWorker> discography;
+    private final ObjectProvider<DiscographyWorker> discographyLanes;
     private final ObjectProvider<GraphWorker> graph;
     private final TidalProperties tidal;
     private final LastFmProperties lastfm;
 
-    public WorkerStatusController(ObjectProvider<DiscographyWorker> discography, ObjectProvider<GraphWorker> graph,
+    public WorkerStatusController(ObjectProvider<DiscographyWorker> discographyLanes, ObjectProvider<GraphWorker> graph,
                                   TidalProperties tidal, LastFmProperties lastfm) {
-        this.discography = discography;
+        this.discographyLanes = discographyLanes;
         this.graph = graph;
         this.tidal = tidal;
         this.lastfm = lastfm;
@@ -41,28 +42,20 @@ public class WorkerStatusController {
 
     @GetMapping("/status")
     public List<WorkerStatus> status() {
-        return List.of(discographyStatus(), graphStatus());
-    }
-
-    private WorkerStatus discographyStatus() {
-        DiscographyWorker w = discography.getIfAvailable();
-        return new WorkerStatus("discography", "TIDAL", w != null, w != null && w.isRunning(), tidal.configured(),
-                w == null ? null : w.startedAt(),
-                w == null ? 0 : w.currentRequestsPerSecond(),
-                w == null ? null : w.inProgress(),
-                w == null ? 0 : w.artistsSinceStart(),
-                w == null ? 0 : w.tracksSinceStart(),
-                w == null ? null : w.lastOutcome());
-    }
-
-    private WorkerStatus graphStatus() {
-        GraphWorker w = graph.getIfAvailable();
-        return new WorkerStatus("taste-graph", "LASTFM", w != null, w != null && w.isRunning(), lastfm.configured(),
-                w == null ? null : w.startedAt(),
-                w == null ? 0 : w.currentRequestsPerSecond(),
-                w == null ? null : w.inProgress(),
-                w == null ? 0 : w.artistsSinceStart(),
-                w == null ? 0 : w.edgesSinceStart(),
-                w == null ? null : w.lastOutcome());
+        List<WorkerStatus> all = new ArrayList<>();
+        discographyLanes.orderedStream()
+                .map(w -> new WorkerStatus("discography:" + w.lane().name().toLowerCase(java.util.Locale.ROOT),
+                        "TIDAL", w.isRunning(), tidal.configured(), w.startedAt(), w.currentRequestsPerSecond(),
+                        w.inProgress(), w.artistsSinceStart(), w.tracksSinceStart(), w.lastOutcome()))
+                .forEach(all::add);
+        GraphWorker g = graph.getIfAvailable();
+        all.add(new WorkerStatus("taste-graph", "LASTFM", g != null && g.isRunning(), lastfm.configured(),
+                g == null ? null : g.startedAt(),
+                g == null ? 0 : g.currentRequestsPerSecond(),
+                g == null ? null : g.inProgress(),
+                g == null ? 0 : g.artistsSinceStart(),
+                g == null ? 0 : g.edgesSinceStart(),
+                g == null ? null : g.lastOutcome()));
+        return all;
     }
 }

@@ -16,8 +16,12 @@ public final class DiscographyWork {
     private DiscographyWork() {
     }
 
+    /** {@code depth} is QUICK when somebody is waiting for this artist — fetch the cheap version. */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Claim(UUID artistId, String name, String provider, String providerResourceId) {
+    public record Claim(UUID artistId, String name, String provider, String providerResourceId, String depth) {
+        public boolean quick() {
+            return "QUICK".equalsIgnoreCase(depth);
+        }
     }
 
     public record Ref(String provider, String providerResourceId) {
@@ -37,7 +41,7 @@ public final class DiscographyWork {
                         double popularity, Album album, List<Artist> artists, Integer volumeNumber, Integer trackNumber) {
     }
 
-    public record Ingest(List<Track> tracks) {
+    public record Ingest(List<Track> tracks, String depth) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

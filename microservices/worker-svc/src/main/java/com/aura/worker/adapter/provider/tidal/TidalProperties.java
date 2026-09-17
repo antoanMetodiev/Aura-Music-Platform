@@ -36,7 +36,9 @@ public record TidalProperties(
         /** Calls in flight at once — TIDAL's bucket is drained by in-flight calls, not just call starts. */
         @DefaultValue("2") int maxConcurrentRequests,
         /** For an artist's full tracklist: NONE = every release of every track, FINGERPRINT = one per distinct recording. */
-        @DefaultValue("NONE") String artistTracksCollapseBy
+        @DefaultValue("NONE") String artistTracksCollapseBy,
+        /** Pages of the collapsed tracklist a quick pull takes. One page is ~20 recordings. */
+        @DefaultValue("3") int quickArtistTrackPages
 ) {
     /** Without both halves of the pair there is nothing to authenticate with, so the worker stays down. */
     public boolean configured() {

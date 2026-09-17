@@ -5,6 +5,7 @@ import com.aura.catalog.domain.model.AlbumType;
 import com.aura.catalog.domain.model.Artwork;
 import com.aura.catalog.domain.model.Provider;
 import com.aura.catalog.domain.model.ProviderReference;
+import com.aura.catalog.domain.port.DiscographySyncStore;
 import com.aura.catalog.domain.port.DiscographySyncStore.PendingArtist;
 import com.aura.catalog.domain.port.ProviderAlbum;
 import com.aura.catalog.domain.port.ProviderArtist;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -40,10 +42,14 @@ public class DiscographyWorkController {
         this.service = service;
     }
 
-    /** @return the claimed artist, or 204 when the whole catalog's discographies are fresh */
+    /**
+     * @param lane {@code ON_DEMAND} claims only artists somebody has open right now — the lane that
+     *             keeps a waiting page from queueing behind a two-minute bulk fetch. Default {@code BULK}.
+     * @return the claimed artist, or 204 when this lane has nothing to do
+     */
     @PostMapping("/claim")
-    public ResponseEntity<DiscographyWork.Claim> claim() {
-        return service.claimNext()
+    public ResponseEntity<DiscographyWork.Claim> claim(@RequestParam(value = "lane", required = false) String lane) {
+        return service.claimNext(parseLane(lane))
                 .map(DiscographyWorkController::toClaim)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
@@ -58,8 +64,30 @@ public class DiscographyWorkController {
         String name = nameOf(artistId);
         ArtistDiscographyService.Outcome outcome = service.ingest(artistId, name, body.tracks().stream()
                 .map(DiscographyWorkController::toProviderTrack)
-                .toList());
+                .toList(), parseDepth(body.depth()));
         return new DiscographyWork.IngestResult(outcome.artistId(), outcome.name(), outcome.trackCount(), outcome.newArtists());
+    }
+
+    private static DiscographySyncStore.Lane parseLane(String value) {
+        if (value == null || value.isBlank()) return DiscographySyncStore.Lane.BULK;
+        try {
+            return DiscographySyncStore.Lane.valueOf(value.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Unknown lane '" + value + "', expected ON_DEMAND or BULK");
+        }
+    }
+
+    /**
+     * A missing depth means FULL: the worker only ever omits it by being an older build, and recording
+     * a fetch as fuller than it was would leave the artist half-synced with nothing to fix it.
+     */
+    private static DiscographySyncStore.Depth parseDepth(String value) {
+        if (value == null || value.isBlank()) return DiscographySyncStore.Depth.FULL;
+        try {
+            return DiscographySyncStore.Depth.valueOf(value.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Unknown depth '" + value + "', expected QUICK or FULL");
+        }
     }
 
     /** The provider was unreachable — undo the claim, nothing is known about this artist. */
@@ -86,7 +114,7 @@ public class DiscographyWorkController {
 
     private static DiscographyWork.Claim toClaim(PendingArtist artist) {
         return new DiscographyWork.Claim(artist.id(), artist.name(),
-                artist.ref().provider().name(), artist.ref().providerResourceId());
+                artist.ref().provider().name(), artist.ref().providerResourceId(), artist.depth().name());
     }
 
     // ── Wire → domain ──────────────────────────────────────────────────────────────────────

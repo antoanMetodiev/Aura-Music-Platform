@@ -53,6 +53,9 @@ aura:
       delay-between-artists: ${DISCOGRAPHY_DELAY:500ms}
       idle-delay: 60s
       backoff-on-outage: 2m
+      # The lane that serves artists somebody has open right now — idle almost always, so it asks often.
+      on-demand-lane-enabled: ${ON_DEMAND_LANE_ENABLED:true}
+      on-demand-poll-interval: 1s
 
     # Builds the taste graph: two Last.fm calls per artist.
     graph:

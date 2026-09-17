@@ -31,11 +31,11 @@ import static com.aura.worker.adapter.provider.tidal.TidalMapper.TYPE_TRACKS;
 /**
  * {@link MusicMetadataProvider} backed by the TIDAL Catalogue v2 API (Project-Info.md §12, §15).
  * Everything TIDAL-specific — endpoints, {@code include} lists, JSON:API parsing, the two-call
- * hydration needed for artwork — stays behind this class; {@link com.aura.worker.domain.service.CatalogService}
- * only ever sees {@code Provider*} records.
+ * hydration needed for artwork — stays behind this class; the workers that use it
+ * only ever see {@code Provider*} records.
  *
  * Disabled entirely via {@code music.providers.tidal.enabled=false} (Project-Info.md §37); with no
- * provider bean present, catalog reads/searches serve local data only.
+ * provider bean present the discography worker does not start.
  */
 @Component
 @ConditionalOnProperty(prefix = "music.providers.tidal", name = "enabled", havingValue = "true", matchIfMissing = true)
@@ -86,7 +86,7 @@ public class TidalMetadataProvider implements MusicMetadataProvider {
      */
     @Override
     public List<ProviderTrack> getAlbumTracks(String providerResourceId) {
-        List<JsonApiLinkage> items = collectTrackLinkages(client.albumItems(providerResourceId));
+        List<JsonApiLinkage> items = collectTrackLinkages(client.albumItems(providerResourceId), Integer.MAX_VALUE);
         ResourceIndex index = hydrateTracks(items);
         return items.stream()
                 .map(l -> index.get(TYPE_TRACKS, l.id().id())
@@ -98,7 +98,22 @@ public class TidalMetadataProvider implements MusicMetadataProvider {
     /** Every track the artist appears on, own releases and features alike; no album positions (those come from the album sync). */
     @Override
     public List<ProviderTrack> getArtistTracks(String providerResourceId) {
-        List<JsonApiLinkage> items = collectTrackLinkages(client.artistTracks(providerResourceId, properties.artistTracksCollapseBy()));
+        return getArtistTracks(providerResourceId, false);
+    }
+
+    /**
+     * {@code quick} is the version for an artist page somebody is waiting on: TIDAL's
+     * {@code FINGERPRINT} collapse (one entry per distinct recording, not per release) and only the
+     * first few pages of it. Glass Animals go from 1 243 rows and ~2 minutes to roughly sixty and a
+     * few seconds, which is all a page showing ten tracks was ever going to use. The full pull happens
+     * later, on the bulk lane — the catalog does want every release for album track lists and for
+     * playback's ISRC-sibling reuse.
+     */
+    @Override
+    public List<ProviderTrack> getArtistTracks(String providerResourceId, boolean quick) {
+        String collapseBy = quick ? COLLAPSE_BY_RECORDING : properties.artistTracksCollapseBy();
+        int maxPages = quick ? properties.quickArtistTrackPages() : Integer.MAX_VALUE;
+        List<JsonApiLinkage> items = collectTrackLinkages(client.artistTracks(providerResourceId, collapseBy), maxPages);
         ResourceIndex index = hydrateTracks(items);
         return items.stream()
                 .map(l -> index.get(TYPE_TRACKS, l.id().id()).map(r -> mapper.toTrack(r, index)))
@@ -106,15 +121,18 @@ public class TidalMetadataProvider implements MusicMetadataProvider {
                 .toList();
     }
 
-    /** Walks every page of a cursor-chained relationship (necessarily sequential), keeping only track linkages. */
-    private List<JsonApiLinkage> collectTrackLinkages(Optional<JsonApiDocument> first) {
+    /** TIDAL's name for "one entry per distinct recording" rather than one per release. */
+    private static final String COLLAPSE_BY_RECORDING = "FINGERPRINT";
+
+    /** Walks the pages of a cursor-chained relationship (necessarily sequential), keeping only track linkages. */
+    private List<JsonApiLinkage> collectTrackLinkages(Optional<JsonApiDocument> first, int maxPages) {
         if (first.isEmpty()) return List.of();
         List<JsonApiLinkage> items = new ArrayList<>();
         JsonApiDocument page = first.get();
-        while (true) {
+        for (int pages = 1; ; pages++) {
             page.dataLinkages().stream().filter(l -> TYPE_TRACKS.equals(l.id().type())).forEach(items::add);
             Optional<String> next = page.nextLink();
-            if (next.isEmpty()) break;
+            if (next.isEmpty() || pages >= maxPages) break;
             page = client.page(next.get());
         }
         return items;

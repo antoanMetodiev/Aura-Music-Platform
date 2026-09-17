@@ -6,9 +6,9 @@ import { useTranslations } from "next-intl";
 import { Loader2 } from "lucide-react";
 import { getArtistDiscographyStatus } from "../api/catalogApi";
 
-/** How often we ask, and for how long before giving up quietly (5s × 36 = three minutes). */
-const POLL_INTERVAL_MS = 5000;
-const MAX_ATTEMPTS = 36;
+/** How often we ask, and for how long before giving up quietly (2s × 90 = three minutes). */
+const POLL_INTERVAL_MS = 2000;
+const MAX_ATTEMPTS = 90;
 
 /**
  * Shown while the backend is still pulling an artist's discography from the metadata provider.
@@ -45,7 +45,7 @@ export function CatalogSyncNotice({ artistId }: { artistId: string }) {
           return;
         }
       } catch {
-        // A failed poll is not worth telling the reader about — the next one is five seconds away.
+        // A failed poll is not worth telling the reader about — the next one is two seconds away.
       }
       if (cancelled) return;
       if (attempts >= MAX_ATTEMPTS) {

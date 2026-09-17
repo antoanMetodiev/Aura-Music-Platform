@@ -12,7 +12,26 @@ import java.util.UUID;
 /** Work queue for the continuous artist discography sync, backed by columns on {@code catalog.artists}. */
 public interface DiscographySyncStore {
 
-    record PendingArtist(UUID id, String name, ProviderReference ref) {
+    /**
+     * How much of an artist to fetch. Decided here rather than by the caller: whoever claims the
+     * artist, one somebody is waiting for gets the cheap pull.
+     */
+    enum Depth {
+        /** One entry per distinct recording, first page only — a few provider calls, a few seconds. */
+        QUICK,
+        /** Every release of every track. What the catalog wants; what nobody should wait for. */
+        FULL
+    }
+
+    /** Which artists a claim may take. */
+    enum Lane {
+        /** Only artists somebody has open right now. Empty most of the time, and that is the point. */
+        ON_DEMAND,
+        /** Anything due, the walk's own order. */
+        BULK
+    }
+
+    record PendingArtist(UUID id, String name, ProviderReference ref, Depth depth) {
     }
 
     record SyncStats(long artistsTotal, long artistsSynced, long artistsPending, long artistsFailed, long tracksTotal) {
@@ -45,16 +64,17 @@ public interface DiscographySyncStore {
     GroupSyncState stateOf(Collection<UUID> artistIds);
 
     /**
-     * Claims the next artist whose discography was never synced, is older than {@code refreshAfter},
-     * or whose last attempt failed more than {@code retryAfter} ago — and stamps the attempt so a
-     * second worker (or the next tick) doesn't pick the same one.
+     * Claims the next artist due — never synced, synced only {@link Depth#QUICK}, older than
+     * {@code refreshAfter}, or last attempted more than {@code retryAfter} ago — and stamps the
+     * attempt so a second worker (or the next tick) doesn't pick the same one. {@code lane} narrows
+     * what is eligible; the depth of the claim is decided here, not by the caller.
      */
-    Optional<PendingArtist> claimNext(Duration refreshAfter, Duration retryAfter);
+    Optional<PendingArtist> claimNext(Duration refreshAfter, Duration retryAfter, Lane lane);
 
     /** When the artist's discography was last pulled in full; empty if never. */
     Optional<Instant> syncedAt(UUID artistId);
 
-    void markSynced(UUID artistId, int trackCount);
+    void markSynced(UUID artistId, int trackCount, Depth depth);
 
     void markFailed(UUID artistId, String error);
 
