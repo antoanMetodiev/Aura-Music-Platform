@@ -7,6 +7,7 @@ import com.aura.catalog.adapter.web.dto.LyricsResponse;
 import com.aura.catalog.adapter.web.dto.SearchResponse;
 import com.aura.catalog.adapter.web.dto.TrackResponse;
 import com.aura.catalog.domain.model.SearchType;
+import com.aura.catalog.domain.port.DiscographySyncStore;
 import com.aura.catalog.domain.service.ArtistAboutService;
 import com.aura.catalog.domain.service.CatalogService;
 import com.aura.catalog.domain.service.LyricsService;
@@ -206,6 +207,28 @@ public class CatalogController {
     @GetMapping("/artists/{id}/albums")
     public List<AlbumResponse> getArtistAlbums(@PathVariable UUID id) {
         return catalogService.getArtistAlbums(id).stream().map(mapper::toFullResponse).toList();
+    }
+
+    /**
+     * How complete this artist's catalogue is. Opening an artist page no longer waits for the
+     * provider — it answers from our own catalog and puts the artist at the front of the background
+     * discography queue — so the UI polls this to know whether more music is still on its way, and
+     * stops as soon as {@code complete} is true.
+     */
+    @GetMapping("/artists/{id}/discography-status")
+    public DiscographyStatusResponse getDiscographyStatus(@PathVariable UUID id) {
+        DiscographySyncStore.GroupSyncState state = catalogService.discographyState(id);
+        return new DiscographyStatusResponse(id, state.complete(), state.artists(), state.synced(),
+                state.requestedAt(), state.lastSyncedAt(), state.error());
+    }
+
+    /**
+     * @param artists how many provider profiles this artist has (duplicates are one act — V14)
+     * @param synced  how many of them we have the discography of
+     */
+    public record DiscographyStatusResponse(UUID artistId, boolean complete, int artists, int synced,
+                                            java.time.Instant requestedAt, java.time.Instant lastSyncedAt,
+                                            String error) {
     }
 
     private static Set<SearchType> parseTypes(List<String> raw) {

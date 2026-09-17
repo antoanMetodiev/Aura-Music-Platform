@@ -4,6 +4,7 @@ import com.aura.catalog.domain.model.ProviderReference;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,6 +20,29 @@ public interface DiscographySyncStore {
 
     record RecentSync(UUID artistId, String name, Integer trackCount, Instant syncedAt, Instant attemptedAt, String error) {
     }
+
+    /**
+     * How far the discography sync has got for a whole artist group (a canonical artist and its
+     * duplicate profiles — V14), which is what an artist page actually shows.
+     *
+     * @param artists how many profiles the group has
+     * @param synced  how many of them have their discography
+     */
+    record GroupSyncState(int artists, int synced, Instant requestedAt, Instant lastSyncedAt, String error) {
+        /** Nothing more is coming — the page is as complete as it will get. */
+        public boolean complete() {
+            return artists > 0 && synced == artists;
+        }
+    }
+
+    /**
+     * Marks these artists as wanted now, so the worker does them before the rest of the queue.
+     * Called when someone opens an artist page: a read never waits for the provider any more, it
+     * only says that this artist matters more than the next one by popularity.
+     */
+    void requestSync(Collection<UUID> artistIds);
+
+    GroupSyncState stateOf(Collection<UUID> artistIds);
 
     /**
      * Claims the next artist whose discography was never synced, is older than {@code refreshAfter},

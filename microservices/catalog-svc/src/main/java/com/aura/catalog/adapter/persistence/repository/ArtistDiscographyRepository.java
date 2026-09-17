@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,7 +39,11 @@ public class ArtistDiscographyRepository implements DiscographySyncStore {
                             JOIN catalog.artist_provider_refs r ON r.artist_id = c.id AND r.provider = :provider
                             WHERE (c.discography_synced_at IS NULL OR c.discography_synced_at < now() - CAST(:refreshAfter AS interval))
                               AND (c.discography_attempted_at IS NULL OR c.discography_attempted_at < now() - CAST(:retryAfter AS interval))
-                            ORDER BY c.discography_attempted_at NULLS FIRST, c.created_at
+                            -- An artist someone has open right now goes first, whatever the walk was
+                            -- about to do (V16); the rest keep the original order.
+                            ORDER BY (c.discography_requested_at IS NOT NULL) DESC,
+                                     c.discography_requested_at DESC NULLS LAST,
+                                     c.discography_attempted_at NULLS FIRST, c.created_at
                             LIMIT 1
                             FOR UPDATE OF c SKIP LOCKED
                         )
@@ -64,10 +69,46 @@ public class ArtistDiscographyRepository implements DiscographySyncStore {
     }
 
     @Override
+    public void requestSync(Collection<UUID> artistIds) {
+        if (artistIds.isEmpty()) return;
+        // Bound as text[] and cast: pgjdbc encodes String[] natively, UUID[] it does not.
+        String[] ids = artistIds.stream().map(UUID::toString).toArray(String[]::new);
+        jdbc.sql("""
+                        UPDATE catalog.artists
+                        SET discography_requested_at = now()
+                        WHERE id = ANY(CAST(:ids AS uuid[])) AND discography_synced_at IS NULL
+                        """)
+                .param("ids", ids)
+                .update();
+    }
+
+    @Override
+    public GroupSyncState stateOf(Collection<UUID> artistIds) {
+        if (artistIds.isEmpty()) return new GroupSyncState(0, 0, null, null, null);
+        String[] ids = artistIds.stream().map(UUID::toString).toArray(String[]::new);
+        return jdbc.sql("""
+                        SELECT count(*) AS artists,
+                               count(*) FILTER (WHERE discography_synced_at IS NOT NULL) AS synced,
+                               max(discography_requested_at) AS requested_at,
+                               max(discography_synced_at) AS synced_at,
+                               max(discography_error) AS error
+                        FROM catalog.artists
+                        WHERE id = ANY(CAST(:ids AS uuid[]))
+                        """)
+                .param("ids", ids)
+                .query((rs, n) -> new GroupSyncState(rs.getInt("artists"), rs.getInt("synced"),
+                        ArtistRepository.toInstant(rs, "requested_at"),
+                        ArtistRepository.toInstant(rs, "synced_at"),
+                        rs.getString("error")))
+                .single();
+    }
+
+    @Override
     public void markSynced(UUID artistId, int trackCount) {
         jdbc.sql("""
                         UPDATE catalog.artists
-                        SET discography_synced_at = now(), discography_error = NULL, discography_track_count = :count
+                        SET discography_synced_at = now(), discography_error = NULL, discography_track_count = :count,
+                            discography_requested_at = NULL
                         WHERE id = :id
                         """)
                 .param("count", trackCount)

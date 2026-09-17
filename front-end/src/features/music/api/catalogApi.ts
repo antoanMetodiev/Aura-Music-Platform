@@ -1,5 +1,5 @@
 import { apiFetch } from "@/lib/api/client";
-import type { AlbumDto, ArtistAboutDto, ArtistDto, SearchResponseDto, TrackDto } from "@/types/api";
+import type { AlbumDto, ArtistAboutDto, ArtistDto, DiscographyStatusDto, SearchResponseDto, TrackDto } from "@/types/api";
 import type { Album, AlbumSummary, Artist, ArtistAbout, ArtistSummary, Track } from "@/types/catalog";
 import { toAlbum, toAlbumSummary, toArtist, toArtistAbout, toArtistSummary, toTrack } from "./catalogMappers";
 
@@ -91,4 +91,12 @@ export async function getArtistAbout(id: string, lang?: string): Promise<ArtistA
   const query = lang ? `?lang=${encodeURIComponent(lang)}` : "";
   const dto = await apiFetch<ArtistAboutDto>(`/catalog/artists/${id}/about${query}`);
   return toArtistAbout(dto);
+}
+
+/**
+ * Whether the backend is still filling in this artist's catalogue. Cheap, local read — the artist
+ * page polls it while the discography worker does its round (see `CatalogSyncNotice`).
+ */
+export async function getArtistDiscographyStatus(id: string, signal?: AbortSignal): Promise<DiscographyStatusDto> {
+  return apiFetch<DiscographyStatusDto>(`/catalog/artists/${encodeURIComponent(id)}/discography-status`, { signal });
 }

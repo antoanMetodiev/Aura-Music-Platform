@@ -7,10 +7,11 @@ import type { Locale } from "@/i18n/routing";
 import { routes } from "@/config/routes";
 import { ApiError } from "@/lib/api/client";
 import { EmptyState } from "@/components/common/EmptyState";
-import { getArtist, getArtistAbout, getArtistAlbums, getArtistTopTracks } from "@/features/music/api/catalogApi";
+import { getArtist, getArtistAbout, getArtistAlbums, getArtistDiscographyStatus, getArtistTopTracks } from "@/features/music/api/catalogApi";
 import { ArtistAboutSection } from "@/features/music/components/ArtistAboutSection";
 import { ArtistHero } from "@/features/music/components/ArtistHero";
 import { ArtistTopTracks } from "@/features/music/components/ArtistTopTracks";
+import { CatalogSyncNotice } from "@/features/music/components/CatalogSyncNotice";
 import { HorizontalSection } from "@/features/music/components/HorizontalSection";
 import { MediaCard } from "@/features/music/components/MediaCard";
 import { TrackListSkeleton } from "@/features/music/components/TrackListSkeleton";
@@ -33,9 +34,9 @@ export async function generateMetadata({ params }: PageProps<"/[locale]/artists/
 }
 
 /**
- * The artist itself is a local read, so the hero renders at once; the popular tracks and the
- * discography stream in below. The first open of an artist the background sync hasn't reached yet
- * pulls their whole discography from the provider — a few seconds, once.
+ * Every read here is local, so the whole page renders at once — even for an artist the background
+ * sync has never touched. That artist simply has less to show, and {@link CatalogSyncNotice} says so
+ * while the backend fetches the rest and refreshes the page when it lands.
  */
 export default async function ArtistPage({ params }: PageProps<"/[locale]/artists/[artistId]">) {
   const { locale, artistId } = (await params) as { locale: Locale; artistId: string };
@@ -45,9 +46,13 @@ export default async function ArtistPage({ params }: PageProps<"/[locale]/artist
   // land on that URL so the page has one address, however the user got here.
   if (artist.id !== artistId) redirect(routes.artist(artist.id));
 
+  // Local read; tells us whether the backend is still filling this artist's catalogue in.
+  const discography = await getArtistDiscographyStatus(artist.id).catch(() => null);
+
   return (
     <div className="flex flex-col gap-10 px-3 pt-6 pb-12 sm:px-5 sm:pt-10">
       <ArtistHero artist={artist} />
+      {discography && !discography.complete && <CatalogSyncNotice artistId={artist.id} />}
       <Suspense fallback={<TrackListSkeleton rows={5} />}>
         <TopTracks artist={artist} />
       </Suspense>

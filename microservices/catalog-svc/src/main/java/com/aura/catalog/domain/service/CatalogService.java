@@ -63,7 +63,6 @@ public class CatalogService {
     private final CatalogProperties properties;
     private final Clock clock;
     private final ExecutorService refreshExecutor;
-    private final ArtistMergeService artistMerge;
     private final Cache<String, Hydrated> memory;
     private final ConcurrentHashMap<String, CompletableFuture<Void>> refreshing = new ConcurrentHashMap<>();
 
@@ -73,9 +72,7 @@ public class CatalogService {
                           MusicSearchProvider search,
                           CatalogProperties properties,
                           Clock clock,
-                          ArtistMergeService artistMerge,
                           @AppConfig.HttpIo ExecutorService httpIoExecutor) {
-        this.artistMerge = artistMerge;
         this.store = store;
         this.discography = discography;
         this.metadata = metadata;
@@ -469,15 +466,33 @@ public class CatalogService {
      * picking tracks for twenty candidate artists) must never trigger twenty TIDAL discography syncs.
      */
     public List<Track> getArtistTopTracks(UUID artistId, int limit, boolean localOnly) {
-        List<UUID> group = localOnly ? localGroup(artistId) : readyGroup(artistId);
+        List<UUID> group = requestedGroup(artistId, !localOnly);
         return dedupeReleases(store.findTracksByArtistIds(group, limit * 4), limit);
     }
 
-    /** The canonical artist's id plus its aliases, exactly as the catalog has them right now. */
-    private List<UUID> localGroup(UUID artistId) {
+    /**
+     * The canonical artist's id plus its aliases, exactly as the catalog has them right now — and,
+     * unless the caller asked for a purely local read, a note to the discography worker that someone
+     * is looking at this artist so it does them next (V16).
+     *
+     * <p>This used to pull the artist's whole discography from the provider right here, inside the
+     * request. It made the first open of an artist take minutes — two, measured, while the provider
+     * was rate-limiting us — and the page showed loading skeletons for all of it, to then display
+     * whatever the failed pull had left behind anyway. A read now never waits for a provider
+     * (Project-Info.md §48): it answers with what we have and the catalog fills in behind it, the
+     * same shape as search, lyrics and playback resolution.
+     */
+    private List<UUID> requestedGroup(UUID artistId, boolean requestSync) {
         Artist artist = canonical(store.findArtistById(artistId)
                 .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", artistId)));
-        return store.findArtistGroupIds(artist.id());
+        List<UUID> group = store.findArtistGroupIds(artist.id());
+        if (requestSync) discography.requestSync(group);
+        return group;
+    }
+
+    /** How complete this artist's catalogue is — what the UI polls while the worker fills it in. */
+    public DiscographySyncStore.GroupSyncState discographyState(UUID artistId) {
+        return discography.stateOf(requestedGroup(artistId, false));
     }
 
     /** Local-only walk over the canonical artists, most popular first — for background consumers. */
@@ -496,29 +511,12 @@ public class CatalogService {
 
     /** Albums, EPs and singles credited to the artist (any profile in the group), newest first. */
     public List<Album> getArtistAlbums(UUID artistId) {
-        List<UUID> group = readyGroup(artistId);
+        List<UUID> group = requestedGroup(artistId, true);
         // Providers carry regional / clean-vs-explicit duplicates of the same release; keep one per (title, date).
         Set<String> seen = new java.util.HashSet<>();
         return store.findAlbumsByArtistIds(group).stream()
                 .filter(al -> seen.add(al.title().trim().toLowerCase(Locale.ROOT) + "|" + al.releaseDate()))
                 .toList();
-    }
-
-    /**
-     * The canonical artist's id plus its aliases, each profile's discography pulled if it never was.
-     * A sync brings in the recordings that prove two profiles are one act, so duplicates are merged
-     * right after — which can change which row is canonical, hence the group is re-read at the end.
-     */
-    private List<UUID> readyGroup(UUID artistId) {
-        Artist artist = canonical(store.findArtistById(artistId)
-                .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", artistId)));
-        boolean synced = false;
-        for (UUID memberId : store.findArtistGroupIds(artist.id())) {
-            Artist member = memberId.equals(artist.id()) ? artist : store.findArtistById(memberId).orElse(null);
-            if (member != null) synced |= ensureDiscography(member);
-        }
-        UUID canonicalId = synced ? artistMerge.mergeDuplicatesOf(artist) : artist.id();
-        return store.findArtistGroupIds(canonicalId);
     }
 
     /**
@@ -536,24 +534,6 @@ public class CatalogService {
                 .map(a -> new Artist(canonical.id(), canonical.name(), a.artwork(), canonical.popularity(), null,
                         canonical.providerReferences(), canonical.providerSyncedAt(), canonical.createdAt(), canonical.updatedAt()))
                 .orElse(canonical);
-    }
-
-    /** Pulls the artist's discography from the provider if it never was. Returns true when it just did. */
-    private boolean ensureDiscography(Artist artist) {
-        if (discography.syncedAt(artist.id()).isPresent()) return false;
-        ProviderReference ref = providerRef(artist.providerReferences());
-        if (ref == null) return false;
-        try {
-            List<ProviderTrack> tracks = metadata.getArtistTracks(ref.providerResourceId());
-            store.upsertBatch(tracks, List.of(), List.of());
-            discography.markSynced(artist.id(), tracks.size());
-            return true;
-        } catch (ProviderUnavailableException e) {
-            // Serve what we have; the background worker will complete the discography later.
-            log.warn("Provider {} unavailable while pulling discography of '{}', serving local tracks only: {}",
-                    metadata.provider(), artist.name(), e.getMessage());
-            return false;
-        }
     }
 
     public Artist getArtistByProviderRef(ProviderReference ref) {

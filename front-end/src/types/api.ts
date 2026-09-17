@@ -102,3 +102,18 @@ export interface ArtistAboutDto {
   similar: { name: string; artist: ArtistSummaryDto | null }[];
   links: { type: string; url: string }[];
 }
+
+/**
+ * `GET /catalog/artists/{id}/discography-status`. Opening an artist page no longer waits for the
+ * metadata provider — the backend answers from its own catalog and queues the artist — so this says
+ * whether more of their music is still on its way.
+ */
+export interface DiscographyStatusDto {
+  artistId: string;
+  complete: boolean;
+  artists: number;
+  synced: number;
+  requestedAt: string | null;
+  lastSyncedAt: string | null;
+  error: string | null;
+}

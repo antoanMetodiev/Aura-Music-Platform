@@ -242,6 +242,7 @@
     "links": "Links",
     "website": "Website",
     "fansAlsoLike": "Fans also like",
+    "catalogSync": "We are filling in this artist's catalogue — more music will appear shortly.",
     "noTracks": "No tracks for this artist yet.",
     "tracksUnavailable": {
       "title": "Couldn't load this artist's music",
