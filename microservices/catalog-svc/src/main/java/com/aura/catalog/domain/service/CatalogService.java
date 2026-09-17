@@ -444,8 +444,19 @@ public class CatalogService {
      * profiles lands on the one row that stands for the act. The caller can tell by the id changing.
      */
     public Artist getArtist(UUID id) {
+        return getArtist(id, false);
+    }
+
+    /**
+     * {@code localOnly} answers from our own catalog and never refreshes from the provider. A single
+     * artist page can afford that refresh — it is how a stale row, or one V18 marked for repair, gets
+     * its picture back. A caller reading forty artists to build one feed cannot: forty refreshes queue
+     * behind the provider throttle and the whole feed times out, which is exactly what happened.
+     */
+    public Artist getArtist(UUID id, boolean localOnly) {
         Artist local = canonical(store.findArtistById(id)
                 .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", id)));
+        if (localOnly) return local;
         return refreshIfStale(local, local.providerSyncedAt(), local.providerReferences(),
                 ref -> metadata.getArtist(ref.providerResourceId()).map(store::upsertArtist).orElse(local));
     }

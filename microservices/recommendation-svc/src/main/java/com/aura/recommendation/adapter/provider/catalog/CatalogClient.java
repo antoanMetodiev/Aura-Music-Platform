@@ -52,7 +52,9 @@ public class CatalogClient implements CatalogLookup {
         return guarded("artist " + artistId, () -> {
             try {
                 return Optional.ofNullable(restClient.get()
-                                .uri("/api/v1/catalog/artists/{id}", artistId)
+                                // Local only: one feed hydrates forty artists at once, and a refresh
+                                // apiece would queue them all behind catalog-svc's provider throttle.
+                                .uri(b -> b.path("/api/v1/catalog/artists/{id}").queryParam("source", "local").build(artistId))
                                 .retrieve()
                                 .body(CatalogArtistResponse.class))
                         .map(CatalogClient::toArtist);

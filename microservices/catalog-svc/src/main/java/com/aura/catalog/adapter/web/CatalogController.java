@@ -143,9 +143,15 @@ public class CatalogController {
         return catalogService.getAlbumTracks(id).stream().map(mapper::toResponse).toList();
     }
 
+    /**
+     * {@code source=local} never refreshes from the provider. Service-to-service callers that read
+     * many artists for one answer use it — forty refreshes queued behind the provider throttle time
+     * the whole thing out, while a single artist page can well afford one.
+     */
     @GetMapping("/artists/{id}")
-    public ArtistResponse getArtist(@PathVariable UUID id) {
-        return mapper.toFullResponse(catalogService.getArtist(id));
+    public ArtistResponse getArtist(@PathVariable UUID id,
+                                    @RequestParam(value = "source", required = false) String source) {
+        return mapper.toFullResponse(catalogService.getArtist(id, "local".equals(source)));
     }
 
     /**
