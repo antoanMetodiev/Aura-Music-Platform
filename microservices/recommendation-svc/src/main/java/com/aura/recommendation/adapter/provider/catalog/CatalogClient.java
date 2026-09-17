@@ -33,6 +33,8 @@ public class CatalogClient implements CatalogLookup {
     private static final Logger log = LoggerFactory.getLogger(CatalogClient.class);
     private static final ParameterizedTypeReference<List<CatalogTrackResponse>> TRACK_LIST = new ParameterizedTypeReference<>() {
     };
+    /** Names per request. Well under the container's request-line limit even for the longest, most heavily encoded names. */
+    private static final int NAME_LOOKUP_BATCH = 25;
     private static final ParameterizedTypeReference<List<CatalogArtistResponse>> ARTIST_LIST = new ParameterizedTypeReference<>() {
     };
 
@@ -85,18 +87,31 @@ public class CatalogClient implements CatalogLookup {
         return artistIds.stream().map(this::findArtist).flatMap(Optional::stream).toList();
     }
 
+    /**
+     * Chunked, and not for politeness: the names go out as repeated query parameters, and one
+     * artist's sixty neighbours — each contributing a spelling variant, many of them Cyrillic and so
+     * nine bytes a character once encoded — blew past Tomcat's 8KB request line. The failure arrives
+     * as an HTML 400 from the container rather than as anything our code can read, the claim is
+     * released, and that artist is retried forever without ever syncing.
+     */
     @Override
     public List<ArtistRef> findArtistsByNames(Collection<String> names) {
         if (names.isEmpty()) return List.of();
         List<String> distinct = names.stream().filter(n -> n != null && !n.isBlank()).map(String::trim).distinct().toList();
         if (distinct.isEmpty()) return List.of();
-        return guarded("artists by name (" + distinct.size() + ")", () -> {
-            List<CatalogArtistResponse> body = restClient.get()
-                    .uri(b -> b.path("/api/v1/catalog/artists/by-name").queryParam("name", distinct).build())
-                    .retrieve()
-                    .body(ARTIST_LIST);
-            return body == null ? List.<ArtistRef>of() : body.stream().map(CatalogClient::toArtist).toList();
-        });
+
+        List<ArtistRef> all = new java.util.ArrayList<>();
+        for (int from = 0; from < distinct.size(); from += NAME_LOOKUP_BATCH) {
+            List<String> page = distinct.subList(from, Math.min(from + NAME_LOOKUP_BATCH, distinct.size()));
+            all.addAll(guarded("artists by name (" + page.size() + ")", () -> {
+                List<CatalogArtistResponse> body = restClient.get()
+                        .uri(b -> b.path("/api/v1/catalog/artists/by-name").queryParam("name", page).build())
+                        .retrieve()
+                        .body(ARTIST_LIST);
+                return body == null ? List.<ArtistRef>of() : body.stream().map(CatalogClient::toArtist).toList();
+            }));
+        }
+        return all;
     }
 
     @Override
