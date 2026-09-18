@@ -245,7 +245,8 @@ Route groups: `(auth)` — без app shell; `(app)` — с пълния shell (
 | ---------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/login`                     | Login               | Centered card, email+password, OAuth (Google), link към register/forgot                                                                              |
 | `/register`                  | Register            | email, password, username, display name; Zod validation                                                                                              |
-| `/forgot-password`           | Forgot password     | email → Supabase reset                                                                                                                                |
+| `/forgot-password`           | Forgot password     | email → Better Auth reset link (Resend; в dev линкът се печата в конзолата)                                                                                                                                |
+| `/reset-password`            | Reset password      | Каца от линка в имейла (`?token=`): нова парола + потвърждение                                                                                       |
 | `/home`                      | Home                | Greeting header ("Good morning, Antoan"), QuickAccessGrid, секции: Recently played, Made for you, Friends are listening to, Trending among friends, New releases, Because you listened to…, Recommended playlists |
 | `/search`                    | Search (empty)      | Recent searches, Browse genres grid                                                                                                                   |
 | `/search/[query]`            | Search results      | FilterChips (All / Tracks / Artists / Albums / Playlists / People), TopResultCard + TrackList (top 5), секции по тип                                  |
@@ -333,7 +334,9 @@ Route groups: `(auth)` — без app shell; `(app)` — с пълния shell (
 
 ### 5.8 Auth (`features/auth`)
 
-- `LoginForm`, `RegisterForm`, `ForgotPasswordForm`, `OAuthButtons`, `AuthCard`
+- `LoginForm`, `RegisterForm`, `ForgotPasswordForm`, `ResetPasswordForm`, `OAuthButtons`, `AuthCard`,
+  `FormField`, `FormError`; `schemas/auth.ts` (Zod, съобщенията са `auth.errors.*` ключове),
+  `lib/errors.ts` (Better Auth code → ключ), `lib/toUserSummary.ts`
 
 ### 5.9 UI primitives (`components/ui` — shadcn/ui)
 
@@ -362,6 +365,7 @@ front-end/
         login/page.tsx
         register/page.tsx
         forgot-password/page.tsx
+        reset-password/page.tsx
       (app)/
         layout.tsx            ← AppShell (sidebar, topbar, player, right panel)
         home/page.tsx
@@ -403,12 +407,16 @@ front-end/
       store/
         ui-store.ts           ← Zustand: sidebar collapsed, right panel tab, mobile player
       api/
-        client.ts             ← fetch wrapper: base URL, JWT, request-id, error mapping
+        client.ts             ← fetch wrapper: base URL, Bearer JWT (по избор), error mapping
+        token.ts              ← browser JWT cache (/api/auth/token)
         endpoints.ts
+      auth/
+        auth.ts               ← Better Auth config (server-only): Postgres `identity`, Google, JWT plugin
+        client.ts             ← browser client (signIn / signUp / signOut / useSession)
+        session.ts            ← getSession() / getAccessToken() за server components
+        mailer.ts             ← Resend (dev: линковете в конзолата), username.ts
       supabase/
-        client.ts             ← browser client
-        server.ts             ← server client (cookies)
-        realtime.ts           ← presence / broadcast helpers
+        realtime.ts           ← presence / broadcast helpers (само Realtime — Auth не се ползва)
       query/
         provider.tsx          ← TanStack QueryClientProvider
         keys.ts               ← query key factory
@@ -473,10 +481,24 @@ front-end/
 
 ### Auth
 
-- Supabase Auth през `@supabase/ssr`. Middleware пази `(app)` routes.
-- JWT никога не се пази в localStorage от нас — Supabase cookie flow.
-- Никакви provider secrets във frontend-а. Само `NEXT_PUBLIC_SUPABASE_URL`,
-  `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_BASE_URL`.
+- **Better Auth** (Project-Info.md §8, ADR-011) — не Supabase Auth, не Clerk. Конфигурацията е
+  `lib/auth/auth.ts` (server-only), route handler-ът `app/api/auth/[...all]/route.ts`, browser
+  клиентът `lib/auth/client.ts` (`signIn`, `signUp`, `signOut`, `useSession`).
+- Email + парола и Google (`OAuthButtons`). Username plugin: всеки потребител има `username`
+  (Google sign-up го получава от local part-а на имейла през `lib/auth/username.ts`).
+- Session: httpOnly cookie. Server components четат `getSession()` от `lib/auth/session.ts`
+  (memoized per request). `proxy.ts` bounce-ва без cookie към `/login?next=…` (само проверка
+  дали има cookie); `(app)/layout.tsx` прави истинската проверка; `(auth)/layout.tsx` връща
+  вече влезлите към Home.
+- JWT за Spring: `/api/auth/token` (RS256, 15 min, `aud=aura-api`, `sub`=user UUID). В browser-а
+  `lib/api/token.ts` го кешира в паметта и се подава на `apiFetch(path, { token })`; в server
+  components — `getAccessToken()`. Никога в localStorage.
+- Данни: схема `identity` в общия Postgres; `npm run auth:migrate` прилага диффа, SQL-ът е в
+  `db/auth/`. Имейли (верификация, reset) през Resend — без `RESEND_API_KEY` линковете се печатат
+  в server конзолата.
+- Никакви provider secrets във frontend-а. Server-only env: `BETTER_AUTH_SECRET`, `DATABASE_URL`,
+  `GOOGLE_CLIENT_ID/SECRET`, `RESEND_API_KEY`. Публични: `NEXT_PUBLIC_APP_URL`,
+  `NEXT_PUBLIC_API_BASE_URL`.
 
 ### Playback
 
@@ -535,7 +557,7 @@ front-end/
 
 1. **App shell + design tokens** — layout, sidebar, topbar, player bar (статичен),
    right panel, mobile nav. Всички страници като празни route-ове.
-2. **Auth** — login / register / forgot-password с Supabase.
+2. **Auth** — login / register / forgot-password с Better Auth (готово: email+парола, Google).
 3. **Home** — секции с mock данни → реални данни.
 4. **Search** — global search + results page.
 5. **Artist / Album / Track pages**.

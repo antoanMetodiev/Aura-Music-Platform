@@ -144,7 +144,7 @@ Database / platform:
 
 * Supabase
 * PostgreSQL
-* Supabase Auth
+* Better Auth (identity; вж. §8) — не Supabase Auth
 * Supabase Realtime
 * Supabase Storage
 
@@ -234,7 +234,7 @@ Backend архитектурата трябва да остане portable.
 Той предоставя:
 
 * PostgreSQL
-* Auth
+* ~~Auth~~ (не се ползва — самоличността е Better Auth, §8)
 * Realtime
 * Storage
 
@@ -339,26 +339,39 @@ logical service ownership.
 8. AUTHENTICATION
 =================
 
-Supabase Auth е identity provider.
+Better Auth е identity provider (ADR-011, 2026-09-18 — замени Supabase Auth; Clerk и Supabase
+Auth са отхвърлени, за да не зависим от външен доставчик за самоличността).
 
-НЕ създавай собствена система за password authentication.
+Better Auth живее в Next.js (`front-end/src/lib/auth/auth.ts`, endpoints под `/api/auth/*`) и
+притежава схемата `identity` в общия Supabase Postgres (`identity.user`, `session`, `account`,
+`verification`, `jwks`). Схемата се прилага с `npm run auth:migrate`; SQL-ът е в
+`front-end/db/auth/`. Не се ползва схемата `auth` — тя е резервирана от Supabase за неговия
+GoTrue и `postgres` ролята няма права в нея.
+
+Методи: email + парола (с верификация и reset по имейл през Resend) и Google OAuth.
+
+НЕ създавай собствена система за password authentication — Better Auth я дава наготово.
 
 User authentication:
 
-Next.js
+Next.js (Better Auth)
 |
 v
-Supabase Auth
+session cookie (httpOnly) за UI-а  +  JWT (RS256, 15 min, aud=aura-api) за API-то
 |
 v
-JWT
+API Gateway (forward-ва Authorization: Bearer)
 |
 v
-Spring Security
+Spring Security (oauth2-resource-server, jwk-set-uri = <APP_URL>/api/auth/jwks)
 
-Spring Boot services трябва да валидират Supabase JWT.
+Spring Boot services трябва да валидират Better Auth JWT офлайн през JWKS — никакви обръщения
+към Next.js за всяка заявка. Claims: `sub` (user UUID), `email`, `username`, `name`, `iss`
+(NEXT_PUBLIC_APP_URL), `aud` ("aura-api").
 
-Supabase Auth UUID е canonical user ID.
+`identity.user.id` (UUID, `sub` в JWT-то) е canonical user ID. Другите services го пазят като
+`uuid` колона и никога не дублират identity данни — profile/friendship информацията е на
+Identity & Social service, ключирана по това UUID.
 
 Spring Boot никога не трябва да се доверява на userId, подаден от frontend-а.
 
@@ -375,6 +388,7 @@ Spring Security трябва да управлява:
 Никога не изпращай:
 
 * Supabase service-role key
+* BETTER_AUTH_SECRET, DATABASE_URL, Google client secret
 * TIDAL secret
 * YouTube secret
 * Resend secret
@@ -1911,6 +1925,7 @@ ADR-007 RabbitMQ
 ADR-008 Redis caching
 ADR-009 Render backend deployment
 ADR-010 Cloudflare frontend deployment
+ADR-011 Better Auth as identity provider (replaces Supabase Auth, 2026-09-18)
 
 ==================================================
 53. DEPLOYMENT НА BACKEND-A В RENDER

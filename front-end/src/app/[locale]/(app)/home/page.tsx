@@ -14,7 +14,8 @@ import {
   tracksFor,
   userPlaylists,
 } from "@/lib/mock/catalog";
-import { currentUser, friendPresence, trendingAmongFriends } from "@/lib/mock/social";
+import { friendPresence, trendingAmongFriends } from "@/lib/mock/social";
+import { getSession } from "@/lib/auth/session";
 import { joinArtists } from "@/lib/utils/format";
 import { GreetingHeader } from "@/features/home/components/GreetingHeader";
 import { HorizontalSection } from "@/features/music/components/HorizontalSection";
@@ -39,6 +40,8 @@ export default async function HomePage({ params }: PageProps<"/[locale]/home">) 
   setRequestLocale(locale);
   const t = await getTranslations("home");
   const nav = await getTranslations("nav");
+  // The layout already redirected if there is no session; the greeting just needs the name.
+  const displayName = (await getSession())?.user.name ?? "";
 
   const live = friendPresence.filter((p) => p.status === "listening" && p.track);
 
@@ -59,7 +62,7 @@ export default async function HomePage({ params }: PageProps<"/[locale]/home">) 
 
       <div className="relative flex flex-col gap-10 px-3 pt-4 pb-12 sm:px-5 sm:pt-6">
         <div className="px-3">
-          <GreetingHeader name={currentUser.displayName} liveFriends={live.length} />
+          <GreetingHeader name={displayName} liveFriends={live.length} />
         </div>
 
         <QuickAccessGrid items={quickAccess} className="px-3" />
@@ -86,7 +89,7 @@ export default async function HomePage({ params }: PageProps<"/[locale]/home">) 
           ))}
         </HorizontalSection>
 
-        <HorizontalSection title={t("sections.madeFor", { name: currentUser.displayName })} eyebrow={t("sections.updatedToday")}>
+        <HorizontalSection title={t("sections.madeFor", { name: displayName })} eyebrow={t("sections.updatedToday")}>
           {madeForYou.map((playlist) => (
             <MediaCard
               key={playlist.id}

@@ -54,7 +54,7 @@
     "label": "Search",
     "clear": "Clear search",
     "browseAll": "Browse all",
-    "topResult": "Top result",
+    "topResult": "First match",
     "filters": {
       "all": "All",
       "songs": "Songs",
@@ -224,7 +224,11 @@
     "album": "Album",
     "track": "Track",
     "playlist": "Playlist",
-    "profile": "Profile"
+    "profile": "Profile",
+    "login": "Welcome back",
+    "register": "Create your account",
+    "forgotPassword": "Reset your password",
+    "resetPassword": "Choose a new password"
   },
   "artist": {
     "eyebrow": "Artist",
@@ -253,6 +257,73 @@
       "EP": "EP",
       "SINGLE": "Single",
       "UNKNOWN": "Release"
+    }
+  },
+  "auth": {
+    "login": {
+      "title": "Welcome back",
+      "subtitle": "Sign in to keep listening.",
+      "submit": "Sign in",
+      "noAccount": "New to Aura?",
+      "register": "Create an account",
+      "forgot": "Forgot password?"
+    },
+    "register": {
+      "title": "Create your account",
+      "subtitle": "Music is the center of the social graph.",
+      "submit": "Create account",
+      "hasAccount": "Already have an account?",
+      "login": "Sign in",
+      "usernameHint": "Lowercase letters, numbers, dots and underscores — this is your profile address.",
+      "passwordHint": "At least 8 characters."
+    },
+    "forgot": {
+      "title": "Reset your password",
+      "subtitle": "Enter your email and we'll send you a link to choose a new one.",
+      "submit": "Send reset link",
+      "sent": "If an account exists for {email}, a reset link is on its way. Check your inbox.",
+      "back": "Back to sign in"
+    },
+    "reset": {
+      "title": "Choose a new password",
+      "subtitle": "Your previous password stops working the moment you save this one.",
+      "submit": "Save password",
+      "done": "Password updated — sign in with the new one.",
+      "invalid": "This reset link is invalid or has expired. Request a new one."
+    },
+    "fields": {
+      "email": "Email",
+      "password": "Password",
+      "confirmPassword": "Confirm password",
+      "displayName": "Display name",
+      "username": "Username"
+    },
+    "oauth": {
+      "google": "Continue with Google",
+      "or": "or"
+    },
+    "errors": {
+      "emailRequired": "Enter your email.",
+      "emailInvalid": "That doesn't look like an email address.",
+      "passwordRequired": "Enter your password.",
+      "passwordTooShort": "Use at least 8 characters.",
+      "passwordTooLong": "Keep it under 128 characters.",
+      "passwordsDiffer": "The passwords don't match.",
+      "displayNameRequired": "Tell us what to call you.",
+      "displayNameTooLong": "Keep it under 60 characters.",
+      "usernameTooShort": "At least 3 characters.",
+      "usernameTooLong": "At most 30 characters.",
+      "usernameInvalid": "Only lowercase letters, numbers, dots and underscores.",
+      "invalidCredentials": "Wrong email or password.",
+      "emailTaken": "An account with this email already exists.",
+      "usernameTaken": "That username is taken.",
+      "tooManyRequests": "Too many attempts — wait a moment and try again.",
+      "generic": "Something went wrong. Please try again."
+    },
+    "verifyBanner": "Your email isn't verified yet — check your inbox for the confirmation link.",
+    "legal": {
+      "privacy": "Privacy Policy",
+      "terms": "Terms of Service"
     }
   }
 }

@@ -22,4 +22,7 @@ export const routes = {
   login: "/login",
   register: "/register",
   forgotPassword: "/forgot-password",
+  resetPassword: "/reset-password",
+  privacy: "/privacy",
+  terms: "/terms",
 } as const;

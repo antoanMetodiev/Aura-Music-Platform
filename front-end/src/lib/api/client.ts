@@ -23,12 +23,19 @@ interface ApiFetchOptions {
    * default is "no-store" — callers can opt into ISR-style revalidation once we actually want it. */
   next?: RequestInit["next"];
   signal?: AbortSignal;
+  /**
+   * Bearer token for user-scoped endpoints. Client code passes `await getClientAccessToken()`
+   * (`@/lib/api/token`), server components `await getAccessToken()` (`@/lib/auth/session`).
+   * Public catalog/playback calls leave it out.
+   */
+  token?: string | null;
 }
 
 /**
  * The single place the frontend talks to the backend (FRONTEND.md §7). Goes through the API
  * Gateway (`NEXT_PUBLIC_API_BASE_URL`, default `http://localhost:8080/api/v1`), so every service
- * behind it is reachable the same way. No Authorization header yet — that lands with the Auth slice.
+ * behind it is reachable the same way. Sends `Authorization: Bearer <JWT>` when the caller hands
+ * over a token (see `token` above); the services verify it against Better Auth's JWKS.
  */
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const url = new URL(`${BASE_URL}${path}`);
@@ -47,7 +54,9 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
       cache: "no-store",
       next: options.next,
       signal: options.signal,
-      headers: { Accept: "application/json" },
+      headers: options.token
+        ? { Accept: "application/json", Authorization: `Bearer ${options.token}` }
+        : { Accept: "application/json" },
     });
   } catch (cause) {
     // Backend unreachable (not running, wrong URL, network blip) — distinguish from a real API error

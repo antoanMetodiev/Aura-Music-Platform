@@ -51,12 +51,9 @@ export function TopResultCard({ result }: { result: TopResult }) {
       />
       <h3 className="mt-4 truncate text-2xl font-bold tracking-tight">{track.title}</h3>
       <p className="mt-1 truncate text-sm text-muted-foreground">{joinArtists(track.artists)}</p>
-      <PlayButton
-        tracks={context.length > 0 ? context : [track]}
-        contextId={track.id}
-        size="lg"
-        className="relative z-10 mt-4"
-      />
+      {/* No contextId on purpose: this button is about this one track, not the whole result list —
+          with one, it turned into pause/resume as soon as any other result was playing. */}
+      <PlayButton tracks={context.length > 0 ? context : [track]} size="lg" className="relative z-10 mt-4" />
     </div>
   );
 }

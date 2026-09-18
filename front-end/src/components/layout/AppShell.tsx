@@ -13,7 +13,8 @@ import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
 interface AppShellProps {
-  user: UserSummary;
+  /** `null` for a guest — the shell still renders, with sign-in / sign-up in the top bar. */
+  user: UserSummary | null;
   playlists: PlaylistSummary[];
   presence: FriendPresence[];
   activity: ActivityItem[];
@@ -53,7 +54,7 @@ export function AppShell({ user, playlists, presence, activity, unreadNotificati
 
       <PlayerBar />
       <MiniPlayer className="pt-2" />
-      <MobileBottomNav profileHref={routes.profile(user.username)} />
+      <MobileBottomNav profileHref={user ? routes.profile(user.username) : routes.login} />
     </div>
   );
 }
