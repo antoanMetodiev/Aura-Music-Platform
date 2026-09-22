@@ -38,21 +38,18 @@ public class CatalogWorkClient {
         this.circuitBreaker = circuitBreakerFactory.create("catalog");
     }
 
-    /**
-     * @param lane {@code ON_DEMAND} takes only artists somebody has open right now
-     * @return the artist to sync, or empty when this lane has nothing to do (catalog answers 204)
-     */
-    public Optional<DiscographyWork.Claim> claim(String lane) {
-        return guarded("claim " + lane, () -> Optional.ofNullable(restClient.post()
-                .uri(b -> b.path(BASE + "/claim").queryParam("lane", lane).build())
+    /** @return the artist somebody has open right now, or empty when nobody is waiting (catalog answers 204). */
+    public Optional<DiscographyWork.Claim> claim() {
+        return guarded("claim", () -> Optional.ofNullable(restClient.post()
+                .uri(BASE + "/claim")
                 .retrieve()
                 .body(DiscographyWork.Claim.class)));
     }
 
-    public DiscographyWork.IngestResult ingest(UUID artistId, List<ProviderTrack> tracks, String depth) {
+    public DiscographyWork.IngestResult ingest(UUID artistId, List<ProviderTrack> tracks) {
         return guarded("ingest " + artistId, () -> restClient.post()
                 .uri(BASE + "/{id}/tracks", artistId)
-                .body(new DiscographyWork.Ingest(tracks.stream().map(CatalogWorkClient::toWire).toList(), depth))
+                .body(new DiscographyWork.Ingest(tracks.stream().map(CatalogWorkClient::toWire).toList()))
                 .retrieve()
                 .body(DiscographyWork.IngestResult.class));
     }

@@ -16,12 +16,9 @@ public final class DiscographyWork {
     private DiscographyWork() {
     }
 
-    /** {@code depth} is QUICK when somebody is waiting for this artist — fetch the cheap version. */
+    /** An artist somebody has open right now — the only kind that is ever claimed. */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Claim(UUID artistId, String name, String provider, String providerResourceId, String depth) {
-        public boolean quick() {
-            return "QUICK".equalsIgnoreCase(depth);
-        }
+    public record Claim(UUID artistId, String name, String provider, String providerResourceId) {
     }
 
     public record Ref(String provider, String providerResourceId) {
@@ -41,7 +38,7 @@ public final class DiscographyWork {
                         double popularity, Album album, List<Artist> artists, Integer volumeNumber, Integer trackNumber) {
     }
 
-    public record Ingest(List<Track> tracks, String depth) {
+    public record Ingest(List<Track> tracks) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

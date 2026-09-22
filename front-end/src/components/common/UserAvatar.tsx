@@ -11,7 +11,9 @@ interface UserAvatarProps {
 export function UserAvatar({ user, size = "default", className }: UserAvatarProps) {
   return (
     <Avatar size={size} className={cn("after:border-white/10", className)}>
-      {user.avatarUrl ? <AvatarImage src={user.avatarUrl} alt={user.displayName} /> : null}
+      {/* no-referrer: Google profile photos (lh3.googleusercontent.com) refuse requests that carry
+          a third-party Referer, so the image would silently fall back to initials. */}
+      {user.avatarUrl ? <AvatarImage src={user.avatarUrl} alt={user.displayName} referrerPolicy="no-referrer" /> : null}
       <AvatarFallback
         className="font-medium text-white/90"
         style={{ backgroundImage: avatarGradient(user.username) }}

@@ -243,10 +243,10 @@ Route groups: `(auth)` — без app shell; `(app)` — с пълния shell (
 
 | Route                        | Page                | Основни блокове                                                                                                                                       |
 | ---------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/login`                     | Login               | Centered card, email+password, OAuth (Google), link към register/forgot                                                                              |
-| `/register`                  | Register            | email, password, username, display name; Zod validation                                                                                              |
-| `/forgot-password`           | Forgot password     | email → Better Auth reset link (Resend; в dev линкът се печата в конзолата)                                                                                                                                |
-| `/reset-password`            | Reset password      | Каца от линка в имейла (`?token=`): нова парола + потвърждение                                                                                       |
+| `/login`                     | Login               | AuthCard: Google бутон, email + парола (`?next=` връща там, откъдето е дошъл), линк „Забравена парола“                                              |
+| `/register`                  | Register            | AuthCard: Google, име / username / email / парола; при включено потвърждение показва „провери пощата“                                                |
+| `/forgot-password`            | Forgot password     | Email → Supabase праща линк за reset                                                                                                                  |
+| `/reset-password`             | Reset password      | Нова парола; линкът от имейла идва тук през `/api/auth/callback` с отворена recovery сесия                                                          |
 | `/home`                      | Home                | Greeting header ("Good morning, Antoan"), QuickAccessGrid, секции: Recently played, Made for you, Friends are listening to, Trending among friends, New releases, Because you listened to…, Recommended playlists |
 | `/search`                    | Search (empty)      | Recent searches, Browse genres grid                                                                                                                   |
 | `/search/[query]`            | Search results      | FilterChips (All / Tracks / Artists / Albums / Playlists / People), TopResultCard + TrackList (top 5), секции по тип                                  |
@@ -332,11 +332,21 @@ Route groups: `(auth)` — без app shell; `(app)` — с пълния shell (
 
 - `NotificationBell` (unread count), `NotificationList`, `NotificationItem`
 
-### 5.8 Auth (`features/auth`)
+### 5.8 Auth
 
-- `LoginForm`, `RegisterForm`, `ForgotPasswordForm`, `ResetPasswordForm`, `OAuthButtons`, `AuthCard`,
-  `FormField`, `FormError`; `schemas/auth.ts` (Zod, съобщенията са `auth.errors.*` ключове),
-  `lib/errors.ts` (Better Auth code → ключ), `lib/toUserSummary.ts`
+- `features/auth`: `components/` (AuthCard, LoginForm, RegisterForm, ForgotPasswordForm,
+  ResetPasswordForm, OAuthButtons), `schemas/auth.ts` (Zod, съобщенията са ключове в
+  `auth.errors`), `lib/errors.ts` (Supabase error code → `auth.errors.*`), `lib/callback.ts`
+  (абсолютен URL на `/api/auth/callback?next=`), `actions.ts` (проверка дали username е свободен
+  преди sign-up). Формите говорят директно със Supabase от браузъра (`lib/supabase/browser.ts`).
+  Общи парчета: `components/common/FormField`, `FormError`.
+
+### 5.8a Profile (`features/profile`)
+
+- `/profile/[username]`: своят → `ProfileSettings` (снимка, име/username, имейл, парола, начин за
+  вход, „излез отвсякъде“, изтриване); чужд → `PublicProfile` (ред от `identity.user_profile` по
+  username).
+- Език: `LanguageToggle` (EN | BG) винаги видим в top bar-а, за гост и за влязъл.
 
 ### 5.9 UI primitives (`components/ui` — shadcn/ui)
 
@@ -390,7 +400,7 @@ front-end/
       layout/                 ← AppShell, Sidebar, TopBar, RightPanel, MobileBottomNav
       common/                 ← ArtworkImage, EmptyState, ErrorState, PageHeader
     features/
-      auth/        { components/, hooks/, api/, schemas/ }
+      auth/        { components/, schemas/, lib/, actions.ts }  ← вход/регистрация/парола (Supabase)
       home/        { components/ }                            ← Home-only pieces (GreetingHeader)
       music/       { components/, hooks/, api/, types/ }      ← catalog: tracks/albums/artists
       search/
@@ -408,15 +418,21 @@ front-end/
         ui-store.ts           ← Zustand: sidebar collapsed, right panel tab, mobile player
       api/
         client.ts             ← fetch wrapper: base URL, Bearer JWT (по избор), error mapping
-        token.ts              ← browser JWT cache (/api/auth/token)
+        token.ts              ← browser JWT cache (Supabase session access_token)
         endpoints.ts
       auth/
-        auth.ts               ← Better Auth config (server-only): Postgres `identity`, Google, JWT plugin
-        client.ts             ← browser client (signIn / signUp / signOut / useSession)
-        session.ts            ← getSession() / getAccessToken() за server components
-        mailer.ts             ← Resend (dev: линковете в конзолата), username.ts
+        session.ts            ← getSession() (JWT claims + identity.user_profile) / getAccessToken() / toUserSummary
+        profile.ts            ← identity.user_profile (username, display name, снимки) през lib/db.ts (pg)
+        avatars.ts            ← identity.user_avatar (байтовете на качената снимка)
+        client.ts             ← signOut() за браузъра (local / global)
+        redirects.ts          ← safePath(): само same-site пътища за ?next=
+        username.ts           ← правила и избор на свободен username
       supabase/
-        realtime.ts           ← presence / broadcast helpers (само Realtime — Auth не се ползва)
+        env.ts                ← NEXT_PUBLIC_SUPABASE_URL / ANON_KEY, isSupabaseAuthConfigured()
+        server.ts             ← createSupabaseServerClient() (cookies на заявката)
+        browser.ts            ← supabaseBrowser() (singleton)
+        admin.ts              ← service-role клиент (само изтриване на акаунт)
+        realtime.ts           ← presence / broadcast helpers
       query/
         provider.tsx          ← TanStack QueryClientProvider
         keys.ts               ← query key factory
@@ -481,24 +497,39 @@ front-end/
 
 ### Auth
 
-- **Better Auth** (Project-Info.md §8, ADR-011) — не Supabase Auth, не Clerk. Конфигурацията е
-  `lib/auth/auth.ts` (server-only), route handler-ът `app/api/auth/[...all]/route.ts`, browser
-  клиентът `lib/auth/client.ts` (`signIn`, `signUp`, `signOut`, `useSession`).
-- Email + парола и Google (`OAuthButtons`). Username plugin: всеки потребител има `username`
-  (Google sign-up го получава от local part-а на имейла през `lib/auth/username.ts`).
-- Session: httpOnly cookie. Server components четат `getSession()` от `lib/auth/session.ts`
-  (memoized per request). `proxy.ts` bounce-ва без cookie към `/login?next=…` (само проверка
-  дали има cookie); `(app)/layout.tsx` прави истинската проверка; `(auth)/layout.tsx` връща
-  вече влезлите към Home.
-- JWT за Spring: `/api/auth/token` (RS256, 15 min, `aud=aura-api`, `sub`=user UUID). В browser-а
-  `lib/api/token.ts` го кешира в паметта и се подава на `apiFetch(path, { token })`; в server
-  components — `getAccessToken()`. Никога в localStorage.
-- Данни: схема `identity` в общия Postgres; `npm run auth:migrate` прилага диффа, SQL-ът е в
-  `db/auth/`. Имейли (верификация, reset) през Resend — без `RESEND_API_KEY` линковете се печатат
-  в server конзолата.
-- Никакви provider secrets във frontend-а. Server-only env: `BETTER_AUTH_SECRET`, `DATABASE_URL`,
-  `GOOGLE_CLIENT_ID/SECRET`, `RESEND_API_KEY`. Публични: `NEXT_PUBLIC_APP_URL`,
-  `NEXT_PUBLIC_API_BASE_URL`.
+- **Supabase Auth** (Project-Info.md §8, ADR-012) — същият Supabase проект като базата; не Auth0
+  (ADR-011 е отменен), не Clerk, не self-hosted. SDK `@supabase/ssr` + `@supabase/supabase-js`:
+  `lib/supabase/server.ts` (server components / actions / route handlers, cookies на заявката),
+  `lib/supabase/browser.ts` (формите), `lib/supabase/admin.ts` (service role, само за изтриване).
+  `proxy.ts` обновява изтекъл access token на всяка заявка и записва cookie-тата в intl отговора.
+- Вход/регистрация са наши форми (`features/auth`), които говорят със Supabase от браузъра:
+  `signInWithPassword`, `signUp` (username + display_name в `user_metadata`), `signInWithOAuth`
+  (Google), `resetPasswordForEmail`, `updateUser({ password })`. Всичко, което напуска сайта
+  (Google, имейл за потвърждение, имейл за reset), се връща през `GET /api/auth/callback?code=&next=`
+  (PKCE: `exchangeCodeForSession` → cookie → redirect към `next`, само same-site).
+- Session: Supabase cookie (access + refresh token). Server components четат `getSession()` от
+  `lib/auth/session.ts` (memoized): JWT-то се проверява локално (`getClaims`, JWKS), после се
+  добавя редът от `identity.user_profile` — `username`, `name`, `avatarUrl`, `picture`; редът се
+  създава при първата заявка на нов акаунт (`lib/auth/profile.ts` ensureProfile; Google
+  регистрация получава username автоматично). `provider` идва от `app_metadata.provider`
+  (`email` | `google`). **Няма auth gate**: гост разглежда всичко; top bar-ът показва
+  „Вход/Регистрация“ вместо avatar менюто. Излизане: `lib/auth/client.ts` `signOut()`.
+- Профил: `features/profile/actions.ts` (server actions): име/username → `identity.user_profile`;
+  смяна на имейл (`updateUser({ email })`, само за email акаунти; Google имейлът е read-only),
+  reset на парола (Supabase праща имейла), повторно изпращане на потвърждението, изтриване
+  (`auth.admin.deleteUser` + нашите редове). „Излез отвсякъде“ = `signOut({ scope: "global" })`
+  от браузъра. Снимката: `POST /api/profile/avatar` → sharp → `identity.user_avatar`, URL в
+  `identity.user_profile.avatar_url`, сервира се от `/api/avatars/[userId]`.
+- JWT за Spring: Supabase access token-ът (JWKS на
+  `<SUPABASE_URL>/auth/v1/.well-known/jwks.json`, `sub` = Supabase user id). В browser-а
+  `lib/api/token.ts` (`auth.getSession()`, кеш в паметта) → `apiFetch(path, { token })`; в server
+  components `getAccessToken()`. Никога в localStorage.
+- Без ключове (`isSupabaseAuthConfigured()` = false) приложението работи в guest-only режим,
+  вместо да гърми.
+- Env: публични `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_URL`,
+  `NEXT_PUBLIC_API_BASE_URL`; server-only `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`. Supabase
+  dashboard: Site URL = APP_URL, Redirect URL = `<APP_URL>/api/auth/callback`, Google provider
+  с redirect URI `https://<ref>.supabase.co/auth/v1/callback`.
 
 ### Playback
 
@@ -549,6 +580,20 @@ front-end/
 - Vitest + React Testing Library за компоненти и hooks.
 - Playwright за критичните flows: login → search → play → like.
 
+### Deployment (Cloudflare Workers)
+
+- **OpenNext** (`@opennextjs/cloudflare`) — `next build` остава непроменен, адаптерът прави Worker
+  в `.open-next/`. `npm run dev` не е засегнат. Конфигурация: `wrangler.jsonc`,
+  `open-next.config.ts`; пълните стъпки са в **DEPLOY.md**.
+- Env: `NEXT_PUBLIC_*` идват от `.env.production` (в repo-то, публични по дефиниция);
+  `SUPABASE_SERVICE_ROLE_KEY` и `DATABASE_URL` са Worker secrets (`wrangler secret put`),
+  а за `npm run preview` — в `.dev.vars` (gitignored).
+- Две неща, които Workers налагат на кода: аватарите се смаляват от `env.IMAGES`, не от `sharp`
+  (native binary), а `lib/db.ts` прави Postgres клиент **на заявка** — връзка от една заявка не
+  може да се ползва в следваща. Hyperdrive binding-ът е това, което прави цената поносима.
+- Деплоят минава през `.github/workflows/deploy-front-end.yml` (Linux). Локален build на Windows
+  иска включен Developer Mode, иначе OpenNext гърми на symlink.
+
 ---
 
 ## 8. Ред на имплементация (frontend)
@@ -557,7 +602,7 @@ front-end/
 
 1. **App shell + design tokens** — layout, sidebar, topbar, player bar (статичен),
    right panel, mobile nav. Всички страници като празни route-ове.
-2. **Auth** — login / register / forgot-password с Better Auth (готово: email+парола, Google).
+2. **Auth** — Supabase Auth (email+парола, Google) с наши форми + профил в `identity.user_profile` (готово).
 3. **Home** — секции с mock данни → реални данни.
 4. **Search** — global search + results page.
 5. **Artist / Album / Track pages**.

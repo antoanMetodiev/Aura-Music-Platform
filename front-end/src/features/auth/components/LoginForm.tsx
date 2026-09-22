@@ -6,13 +6,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/common/FormError";
+import { FormField } from "@/components/common/FormField";
 import { Link, useRouter } from "@/i18n/navigation";
 import { routes } from "@/config/routes";
-import { signIn } from "@/lib/auth/client";
+import { safePath } from "@/lib/auth/redirects";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 import { loginSchema, type LoginValues } from "../schemas/auth";
 import { useAuthErrorText } from "../lib/errors";
-import { FormError } from "./FormError";
-import { FormField } from "./FormField";
 import { OAuthButtons } from "./OAuthButtons";
 
 export function LoginForm() {
@@ -20,9 +21,9 @@ export function LoginForm() {
   const errorText = useAuthErrorText();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [formError, setFormError] = useState<string | null>(
-    searchParams.get("error") ? t("errors.generic") : null,
-  );
+  const next = safePath(searchParams.get("next"), routes.home);
+  // /api/auth/callback lands here with ?error= when a link from an email is stale or reused.
+  const [formError, setFormError] = useState<string | null>(searchParams.get("error") ? t("errors.linkExpired") : null);
   const {
     register,
     handleSubmit,
@@ -31,19 +32,19 @@ export function LoginForm() {
 
   const onSubmit = async (values: LoginValues) => {
     setFormError(null);
-    const { error } = await signIn.email({ email: values.email, password: values.password });
+    const { error } = await supabaseBrowser().auth.signInWithPassword({ email: values.email, password: values.password });
     if (error) {
       setFormError(errorText.fromApi(error));
       return;
     }
-    // `next` is where the proxy sent us from; server components re-read the cookie on refresh.
-    router.replace(safeNext(searchParams.get("next")) ?? routes.home);
+    // The session cookie is set; server components re-read it on the navigation + refresh.
+    router.replace(next);
     router.refresh();
   };
 
   return (
     <div className="flex flex-col gap-5">
-      <OAuthButtons />
+      <OAuthButtons next={next} />
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
         <FormField
           label={t("fields.email")}
@@ -69,9 +70,4 @@ export function LoginForm() {
       </form>
     </div>
   );
-}
-
-/** Only same-site paths — never an absolute URL someone put in the query string. */
-function safeNext(value: string | null): string | null {
-  return value && value.startsWith("/") && !value.startsWith("//") ? value : null;
 }

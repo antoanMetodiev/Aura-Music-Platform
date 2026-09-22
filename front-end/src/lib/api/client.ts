@@ -35,7 +35,7 @@ interface ApiFetchOptions {
  * The single place the frontend talks to the backend (FRONTEND.md §7). Goes through the API
  * Gateway (`NEXT_PUBLIC_API_BASE_URL`, default `http://localhost:8080/api/v1`), so every service
  * behind it is reachable the same way. Sends `Authorization: Bearer <JWT>` when the caller hands
- * over a token (see `token` above); the services verify it against Better Auth's JWKS.
+ * over a token (see `token` above); the services verify it against Supabase Auth's JWKS.
  */
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const url = new URL(`${BASE_URL}${path}`);

@@ -3,12 +3,13 @@
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/common/FormError";
 import { routes } from "@/config/routes";
-import { signIn } from "@/lib/auth/client";
-import { FormError } from "./FormError";
+import { supabaseBrowser } from "@/lib/supabase/browser";
+import { callbackUrl } from "../lib/callback";
 
 /** Social sign-in. One provider today (Google); the divider reads "or" against the email form below. */
-export function OAuthButtons() {
+export function OAuthButtons({ next }: { next?: string }) {
   const t = useTranslations("auth");
   const locale = useLocale();
   const [pending, setPending] = useState(false);
@@ -17,11 +18,10 @@ export function OAuthButtons() {
   const google = async () => {
     setPending(true);
     setError(null);
-    // Redirects to Google; on success Better Auth sends the browser to callbackURL with the cookie set.
-    const { error } = await signIn.social({
+    // Redirects to Google; Supabase then sends the browser to /api/auth/callback, which sets the cookie.
+    const { error } = await supabaseBrowser().auth.signInWithOAuth({
       provider: "google",
-      callbackURL: `/${locale}${routes.home}`,
-      errorCallbackURL: `/${locale}${routes.login}?error=oauth`,
+      options: { redirectTo: callbackUrl(`/${locale}${next ?? routes.home}`) },
     });
     if (error) {
       setError(t("errors.generic"));

@@ -40,8 +40,8 @@ export default async function HomePage({ params }: PageProps<"/[locale]/home">) 
   setRequestLocale(locale);
   const t = await getTranslations("home");
   const nav = await getTranslations("nav");
-  // The layout already redirected if there is no session; the greeting just needs the name.
-  const displayName = (await getSession())?.user.name ?? "";
+  // Guests get the greeting without a name and the "Made for you" section addressed to nobody.
+  const displayName = (await getSession())?.user.name ?? null;
 
   const live = friendPresence.filter((p) => p.status === "listening" && p.track);
 
@@ -89,7 +89,7 @@ export default async function HomePage({ params }: PageProps<"/[locale]/home">) 
           ))}
         </HorizontalSection>
 
-        <HorizontalSection title={t("sections.madeFor", { name: displayName })} eyebrow={t("sections.updatedToday")}>
+        <HorizontalSection title={displayName ? t("sections.madeFor", { name: displayName }) : t("sections.madeForYou")} eyebrow={t("sections.updatedToday")}>
           {madeForYou.map((playlist) => (
             <MediaCard
               key={playlist.id}

@@ -9,29 +9,17 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Work queue for the continuous artist discography sync, backed by columns on {@code catalog.artists}. */
+/**
+ * Work queue for the on-demand artist discography sync, backed by columns on {@code catalog.artists}.
+ *
+ * <p>Only artists somebody has opened are ever in it. There used to be a bulk walk over the whole
+ * catalog as well — every artist a track dragged in was fetched in full, then every artist <em>their</em>
+ * tracks dragged in — and it filled the database with music nobody asked for (400k tracks for a
+ * handful of users). The catalog now grows from what people actually search for and open, nothing else.
+ */
 public interface DiscographySyncStore {
 
-    /**
-     * How much of an artist to fetch. Decided here rather than by the caller: whoever claims the
-     * artist, one somebody is waiting for gets the cheap pull.
-     */
-    enum Depth {
-        /** One entry per distinct recording, first page only — a few provider calls, a few seconds. */
-        QUICK,
-        /** Every release of every track. What the catalog wants; what nobody should wait for. */
-        FULL
-    }
-
-    /** Which artists a claim may take. */
-    enum Lane {
-        /** Only artists somebody has open right now. Empty most of the time, and that is the point. */
-        ON_DEMAND,
-        /** Anything due, the walk's own order. */
-        BULK
-    }
-
-    record PendingArtist(UUID id, String name, ProviderReference ref, Depth depth) {
+    record PendingArtist(UUID id, String name, ProviderReference ref) {
     }
 
     record SyncStats(long artistsTotal, long artistsSynced, long artistsPending, long artistsFailed, long tracksTotal) {
@@ -55,26 +43,25 @@ public interface DiscographySyncStore {
     }
 
     /**
-     * Marks these artists as wanted now, so the worker does them before the rest of the queue.
-     * Called when someone opens an artist page: a read never waits for the provider any more, it
-     * only says that this artist matters more than the next one by popularity.
+     * Puts these artists in the queue: the ones never synced, and the ones whose sync is older than
+     * {@code refreshAfter} (so new releases show up when the artist is opened again). Called when
+     * someone opens an artist page — a read never waits for the provider, it only says what is wanted.
      */
-    void requestSync(Collection<UUID> artistIds);
+    void requestSync(Collection<UUID> artistIds, Duration refreshAfter);
 
     GroupSyncState stateOf(Collection<UUID> artistIds);
 
     /**
-     * Claims the next artist due — never synced, synced only {@link Depth#QUICK}, older than
-     * {@code refreshAfter}, or last attempted more than {@code retryAfter} ago — and stamps the
-     * attempt so a second worker (or the next tick) doesn't pick the same one. {@code lane} narrows
-     * what is eligible; the depth of the claim is decided here, not by the caller.
+     * Claims the next requested artist — most recently requested first, skipping any attempted less
+     * than {@code retryAfter} ago — and stamps the attempt so a second worker (or the next tick)
+     * doesn't pick the same one.
      */
-    Optional<PendingArtist> claimNext(Duration refreshAfter, Duration retryAfter, Lane lane);
+    Optional<PendingArtist> claimNext(Duration retryAfter);
 
-    /** When the artist's discography was last pulled in full; empty if never. */
+    /** When the artist's discography was last pulled; empty if never. */
     Optional<Instant> syncedAt(UUID artistId);
 
-    void markSynced(UUID artistId, int trackCount, Depth depth);
+    void markSynced(UUID artistId, int trackCount);
 
     void markFailed(UUID artistId, String error);
 

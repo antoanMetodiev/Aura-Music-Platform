@@ -144,7 +144,7 @@ Database / platform:
 
 * Supabase
 * PostgreSQL
-* Better Auth (identity; вж. §8) — не Supabase Auth
+* Supabase Auth (identity; вж. §8)
 * Supabase Realtime
 * Supabase Storage
 
@@ -234,7 +234,7 @@ Backend архитектурата трябва да остане portable.
 Той предоставя:
 
 * PostgreSQL
-* ~~Auth~~ (не се ползва — самоличността е Better Auth, §8)
+* Auth (самоличността, §8)
 * Realtime
 * Storage
 
@@ -339,39 +339,46 @@ logical service ownership.
 8. AUTHENTICATION
 =================
 
-Better Auth е identity provider (ADR-011, 2026-09-18 — замени Supabase Auth; Clerk и Supabase
-Auth са отхвърлени, за да не зависим от външен доставчик за самоличността).
+Supabase Auth е identity provider (ADR-012, 2026-09-22 — върна се на мястото на Auth0, ADR-011;
+Clerk е отхвърлен като прекалено строг, а self-hosted вариантът (Better Auth) — защото не искаме
+сами да поддържаме auth). Един Supabase проект държи и базата, и самоличността (§5).
 
-Better Auth живее в Next.js (`front-end/src/lib/auth/auth.ts`, endpoints под `/api/auth/*`) и
-притежава схемата `identity` в общия Supabase Postgres (`identity.user`, `session`, `account`,
-`verification`, `jwks`). Схемата се прилага с `npm run auth:migrate`; SQL-ът е в
-`front-end/db/auth/`. Не се ползва схемата `auth` — тя е резервирана от Supabase за неговия
-GoTrue и `postgres` ролята няма права в нея.
+Supabase Auth държи потребителите, паролите, Google входа, потвърждението на имейл, reset на
+парола и сесиите (schema `auth`, която Supabase владее). Next.js ползва `@supabase/ssr`
+(`front-end/src/lib/supabase/*`): наши форми за вход/регистрация/парола (`features/auth`), които
+говорят със Supabase от браузъра; сесията е Supabase cookie (access + refresh token), която
+`proxy.ts` обновява на всяка заявка; всичко, което напуска сайта (Google, имейли), се връща през
+`/api/auth/callback` (PKCE). Нашият профил — `username`, display name, качената снимка — живее в
+нашата схема `identity` (`identity.user_profile`, `identity.user_avatar`; `npm run db:migrate`),
+ключиран по `auth.users.id` и създаван при първия вход. Нищо друго за самоличността не се пази
+при нас.
 
-Методи: email + парола (с верификация и reset по имейл през Resend) и Google OAuth.
+Методи: email + парола (Supabase Email provider) и Google (Supabase Google provider).
 
-НЕ създавай собствена система за password authentication — Better Auth я дава наготово.
+НЕ създавай собствена система за password authentication — Supabase Auth я дава наготово.
 
 User authentication:
 
-Next.js (Better Auth)
+Next.js (@supabase/ssr)
 |
 v
-session cookie (httpOnly) за UI-а  +  JWT (RS256, 15 min, aud=aura-api) за API-то
+Supabase Auth → session cookie за UI-а + access token (JWT) за API-то
 |
 v
 API Gateway (forward-ва Authorization: Bearer)
 |
 v
-Spring Security (oauth2-resource-server, jwk-set-uri = <APP_URL>/api/auth/jwks)
+Spring Security (oauth2-resource-server, issuer-uri = https://<project-ref>.supabase.co/auth/v1)
 
-Spring Boot services трябва да валидират Better Auth JWT офлайн през JWKS — никакви обръщения
-към Next.js за всяка заявка. Claims: `sub` (user UUID), `email`, `username`, `name`, `iss`
-(NEXT_PUBLIC_APP_URL), `aud` ("aura-api").
+Spring Boot services трябва да валидират Supabase access token-а офлайн през JWKS
+(`https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json`; проектът трябва да е на
+asymmetric JWT signing keys — Dashboard → Authentication → JWT keys) и да изискват
+`aud` = `authenticated`. Claims: `sub` (Supabase user id, uuid), `iss`, `aud`, `role`,
+`email`, `app_metadata.provider`.
 
-`identity.user.id` (UUID, `sub` в JWT-то) е canonical user ID. Другите services го пазят като
-`uuid` колона и никога не дублират identity данни — profile/friendship информацията е на
-Identity & Social service, ключирана по това UUID.
+Supabase `sub` е canonical user ID (uuid). Другите services го пазят като `uuid` колона и
+никога не дублират identity данни — profile/friendship информацията е на Identity & Social
+service, ключирана по това ID.
 
 Spring Boot никога не трябва да се доверява на userId, подаден от frontend-а.
 
@@ -388,7 +395,7 @@ Spring Security трябва да управлява:
 Никога не изпращай:
 
 * Supabase service-role key
-* BETTER_AUTH_SECRET, DATABASE_URL, Google client secret
+* SUPABASE_SERVICE_ROLE_KEY, DATABASE_URL
 * TIDAL secret
 * YouTube secret
 * Resend secret
@@ -912,11 +919,16 @@ persist match
 Нова песен може да бъде открита по няколко начина:
 
 1. user search
-2. new release discovery
+2. отваряне на artist / album страница
 3. recommendations
 4. playlists
 5. friend activity
-6. background synchronization
+
+НЯМА background обхождане на каталога (решено 2026-09-22). Имаше: worker-svc дърпаше цялата
+дискография на всеки артист, който познава, а всяка песен водеше своите featured артисти, които
+влизаха в същата опашка. Резултатът беше 400 000 записа от 29 000 артиста — музика, която никой
+не е искал и никога нямаше да пусне — и база над лимита на плана. Каталогът расте само от реални
+действия на потребител: търсене, отворен артист (~60 записа), отворен албум (неговият tracklist).
 
 Пример:
 
@@ -1925,7 +1937,8 @@ ADR-007 RabbitMQ
 ADR-008 Redis caching
 ADR-009 Render backend deployment
 ADR-010 Cloudflare frontend deployment
-ADR-011 Better Auth as identity provider (replaces Supabase Auth, 2026-09-18)
+ADR-011 Auth0 as identity provider (replaces Supabase Auth, 2026-09-18) — superseded by ADR-012
+ADR-012 Supabase Auth as identity provider (replaces Auth0, 2026-09-22): one vendor for database, realtime, storage and identity
 
 ==================================================
 53. DEPLOYMENT НА BACKEND-A В RENDER

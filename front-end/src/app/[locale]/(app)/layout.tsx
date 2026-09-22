@@ -1,8 +1,7 @@
 import { setRequestLocale } from "next-intl/server";
 import type { Locale } from "@/i18n/routing";
 import { AppShell } from "@/components/layout/AppShell";
-import { toUserSummary } from "@/features/auth/lib/toUserSummary";
-import { getSession } from "@/lib/auth/session";
+import { getSession, toUserSummary } from "@/lib/auth/session";
 import { userPlaylists } from "@/lib/mock/catalog";
 import { activityFeed, friendPresence } from "@/lib/mock/social";
 

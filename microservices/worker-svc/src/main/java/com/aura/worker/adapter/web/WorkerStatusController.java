@@ -27,14 +27,14 @@ public class WorkerStatusController {
                                long unitsSinceStart, long producedSinceStart, Object lastOutcome) {
     }
 
-    private final ObjectProvider<DiscographyWorker> discographyLanes;
+    private final ObjectProvider<DiscographyWorker> discography;
     private final ObjectProvider<GraphWorker> graph;
     private final TidalProperties tidal;
     private final LastFmProperties lastfm;
 
-    public WorkerStatusController(ObjectProvider<DiscographyWorker> discographyLanes, ObjectProvider<GraphWorker> graph,
+    public WorkerStatusController(ObjectProvider<DiscographyWorker> discography, ObjectProvider<GraphWorker> graph,
                                   TidalProperties tidal, LastFmProperties lastfm) {
-        this.discographyLanes = discographyLanes;
+        this.discography = discography;
         this.graph = graph;
         this.tidal = tidal;
         this.lastfm = lastfm;
@@ -43,11 +43,14 @@ public class WorkerStatusController {
     @GetMapping("/status")
     public List<WorkerStatus> status() {
         List<WorkerStatus> all = new ArrayList<>();
-        discographyLanes.orderedStream()
-                .map(w -> new WorkerStatus("discography:" + w.lane().name().toLowerCase(java.util.Locale.ROOT),
-                        "TIDAL", w.isRunning(), tidal.configured(), w.startedAt(), w.currentRequestsPerSecond(),
-                        w.inProgress(), w.artistsSinceStart(), w.tracksSinceStart(), w.lastOutcome()))
-                .forEach(all::add);
+        DiscographyWorker d = discography.getIfAvailable();
+        all.add(new WorkerStatus("discography", "TIDAL", d != null && d.isRunning(), tidal.configured(),
+                d == null ? null : d.startedAt(),
+                d == null ? 0 : d.currentRequestsPerSecond(),
+                d == null ? null : d.inProgress(),
+                d == null ? 0 : d.artistsSinceStart(),
+                d == null ? 0 : d.tracksSinceStart(),
+                d == null ? null : d.lastOutcome()));
         GraphWorker g = graph.getIfAvailable();
         all.add(new WorkerStatus("taste-graph", "LASTFM", g != null && g.isRunning(), lastfm.configured(),
                 g == null ? null : g.startedAt(),

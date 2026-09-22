@@ -1,0 +1,49 @@
+/**
+ * Cloudflare Workers deployment of the Aura web app (Project-Info.md §4: Cloudflare is the
+ * frontend/edge layer; the Spring services stay on Render behind the API gateway).
+ *
+ * Next.js runs here through the OpenNext adapter — `npm run deploy` builds `.open-next/` from a
+ * normal `next build` and uploads it. `npm run dev` is untouched and still a plain Next dev server.
+ *
+ * Secrets do NOT live in this file. Public NEXT_PUBLIC_* values are baked into the build from
+ * `.env.production`; server-only secrets are uploaded with `wrangler secret put` (see DEPLOY.md).
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aura-web",
+  "main": ".open-next/worker.js",
+  // Matches the workerd bundled with the installed wrangler; raising it changes runtime behaviour,
+  // so it moves deliberately, not automatically.
+  "compatibility_date": "2026-09-21",
+  // nodejs_compat: `pg` (node:net/tls/crypto) and Next's server runtime need it.
+  // global_fetch_strictly_public: OpenNext requires it so fetches to our own domain go out through
+  // the internet rather than looping back inside the Worker.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+
+  // Avatar resizing. `sharp` is a native binary and cannot run on Workers; this binding does the
+  // same job (256×256 cover, WebP) — see src/lib/auth/avatars.ts.
+  "images": {
+    "binding": "IMAGES"
+  },
+
+  "observability": {
+    "enabled": true
+  },
+
+  // Postgres (the `identity` schema: profiles and avatars). Every signed-in request reads the
+  // profile row, so this is a hot path: Hyperdrive keeps a warm connection pool next to Supabase
+  // instead of each isolate opening its own. Create it once —
+  //   npx wrangler hyperdrive create aura-identity --connection-string="<DATABASE_URL>"
+  // — then uncomment this with the id it prints. Until then src/lib/db.ts falls back to the
+  // DATABASE_URL secret, which works but pays a full connection setup per request.
+  // "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<id from wrangler hyperdrive create>" }],
+
+  // The Worker mostly talks to Postgres and the API gateway, so running it near the data beats
+  // running it near the user.
+  "placement": { "mode": "smart" }
+}

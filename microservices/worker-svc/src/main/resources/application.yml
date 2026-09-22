@@ -29,6 +29,11 @@ music:
       client-secret: ${TIDAL_CLIENT_SECRET:}
       country-code: ${TIDAL_COUNTRY_CODE:BG}
       max-requests-per-second: ${TIDAL_MAX_RPS:3}
+      # Pages of an artist's tracklist to take (~20 distinct recordings each). This is the ceiling
+      # on how much one page view can add to the catalog. Fetching every release of every track is
+      # what used to fill the database with music nobody plays; the rest of an album arrives when
+      # its own page is opened.
+      artist-track-pages: ${TIDAL_ARTIST_TRACK_PAGES:3}
 
     # Likewise this service's own Last.fm key — catalog-svc uses its own for artist biographies while
     # requests wait; this one grinds through the whole catalog in the background.
@@ -47,15 +52,14 @@ aura:
     recommendation-url: ${RECOMMENDATION_SVC_URL:http://localhost:8083}
 
   workers:
-    # Pulls every track of every artist in the catalog, most-neglected first.
+    # Fetches the tracks of artists somebody has just opened — and nothing else. The walk over the
+    # whole catalog that used to live here is gone: it grew the database to 400k tracks of music no
+    # one had asked for. The queue is empty most of the time, which is why polling this often is cheap.
     discography:
       enabled: ${DISCOGRAPHY_WORKER_ENABLED:true}
       delay-between-artists: ${DISCOGRAPHY_DELAY:500ms}
-      idle-delay: 60s
+      poll-interval: 1s
       backoff-on-outage: 2m
-      # The lane that serves artists somebody has open right now — idle almost always, so it asks often.
-      on-demand-lane-enabled: ${ON_DEMAND_LANE_ENABLED:true}
-      on-demand-poll-interval: 1s
 
     # Builds the taste graph: two Last.fm calls per artist.
     graph:

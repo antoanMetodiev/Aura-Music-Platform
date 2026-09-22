@@ -178,7 +178,8 @@
       "becauseYouListened": "Because you listened to {artist}",
       "artists": "Artists",
       "recommendedPlaylists": "Recommended playlists",
-      "basedOnRecent": "Based on your recent listening"
+      "basedOnRecent": "Based on your recent listening",
+      "madeForYou": "Made for you"
     },
     "cards": {
       "song": "Song · {artists}",
@@ -260,6 +261,10 @@
     }
   },
   "auth": {
+    "nav": {
+      "login": "Log in",
+      "register": "Sign up"
+    },
     "login": {
       "title": "Welcome back",
       "subtitle": "Sign in to keep listening.",
@@ -275,7 +280,8 @@
       "hasAccount": "Already have an account?",
       "login": "Sign in",
       "usernameHint": "Lowercase letters, numbers, dots and underscores — this is your profile address.",
-      "passwordHint": "At least 8 characters."
+      "passwordHint": "At least 8 characters.",
+      "confirmSent": "Almost there — we sent a confirmation link to {email}. Open it to finish creating your account."
     },
     "forgot": {
       "title": "Reset your password",
@@ -289,7 +295,8 @@
       "subtitle": "Your previous password stops working the moment you save this one.",
       "submit": "Save password",
       "done": "Password updated — sign in with the new one.",
-      "invalid": "This reset link is invalid or has expired. Request a new one."
+      "invalid": "This reset link is invalid or has expired. Request a new one.",
+      "continue": "Continue to Aura"
     },
     "fields": {
       "email": "Email",
@@ -318,12 +325,95 @@
       "emailTaken": "An account with this email already exists.",
       "usernameTaken": "That username is taken.",
       "tooManyRequests": "Too many attempts — wait a moment and try again.",
-      "generic": "Something went wrong. Please try again."
+      "generic": "Something went wrong. Please try again.",
+      "emailNotConfirmed": "Confirm your email first — the link is in your inbox.",
+      "samePassword": "That is already your password. Pick a new one.",
+      "linkExpired": "This link is invalid or has expired. Request a new one.",
+      "signupDisabled": "Sign-ups are closed right now."
     },
-    "verifyBanner": "Your email isn't verified yet — check your inbox for the confirmation link.",
     "legal": {
       "privacy": "Privacy Policy",
       "terms": "Terms of Service"
+    }
+  },
+  "profile": {
+    "title": "Your profile",
+    "subtitle": "What people see, how you sign in, and where you're signed in.",
+    "memberSince": "On Aura since {date}",
+    "saved": "Saved.",
+    "save": "Save changes",
+    "cancel": "Cancel",
+    "public": {
+      "title": "Profile",
+      "memberSince": "On Aura since {date}"
+    },
+    "avatar": {
+      "title": "Photo",
+      "hint": "JPG, PNG, WebP or GIF up to 5 MB. Cropped to a square, shown at 256px.",
+      "upload": "Upload photo",
+      "change": "Change photo",
+      "remove": "Remove",
+      "uploading": "Uploading…",
+      "errors": {
+        "UNSUPPORTED_TYPE": "That file type isn't supported.",
+        "TOO_LARGE": "Keep it under 5 MB.",
+        "UNREADABLE_IMAGE": "We couldn't read that image.",
+        "generic": "Upload failed. Try again."
+      }
+    },
+    "details": {
+      "title": "Details",
+      "displayName": "Display name",
+      "username": "Username",
+      "usernameHint": "Your profile address: aura/profile/{username}"
+    },
+    "email": {
+      "title": "Email",
+      "current": "Current email",
+      "new": "New email",
+      "verified": "Verified",
+      "unverified": "Not verified",
+      "submit": "Change email",
+      "changed": "Check both inboxes — the change takes effect once you confirm it from the new address.",
+      "resend": "Resend verification email",
+      "resent": "Verification email sent to {email}.",
+      "managedByGoogle": "This account signs in with Google, so its email comes from Google and can't be changed here."
+    },
+    "password": {
+      "title": "Password",
+      "hint": "We will email you a link to choose a new password. The link expires after an hour.",
+      "submit": "Send password reset email",
+      "sent": "Reset link sent to {email}. Check your inbox.",
+      "managedByGoogle": "You sign in with Google, so there is no Aura password to change."
+    },
+    "accounts": {
+      "title": "Sign-in method",
+      "google": "Google",
+      "password": "Email & password",
+      "primary": "Primary"
+    },
+    "sessions": {
+      "title": "Devices",
+      "hint": "Signed in somewhere you don't recognise? Sign out everywhere — including here — and sign back in.",
+      "revokeAll": "Sign out everywhere"
+    },
+    "danger": {
+      "title": "Delete account",
+      "hint": "Removes your account, playlists, likes and listening history. This can't be undone.",
+      "action": "Delete my account",
+      "confirmTitle": "Delete your account?",
+      "confirmBody": "Everything tied to @{username} disappears for good.",
+      "confirm": "Yes, delete it"
+    },
+    "errors": {
+      "UNAUTHORIZED": "Your session has expired. Sign in again.",
+      "INVALID_NAME": "Tell us what to call you (up to 60 characters).",
+      "INVALID_USERNAME": "3–30 lowercase letters, numbers, dots or underscores.",
+      "USERNAME_TAKEN": "That username is taken.",
+      "INVALID_EMAIL": "That doesn't look like an email address.",
+      "EMAIL_NOT_EDITABLE": "This email is managed by Google.",
+      "PASSWORD_NOT_APPLICABLE": "This account has no password.",
+      "PROVIDER_ERROR": "Something went wrong on our side. Please try again."
     }
   }
 }

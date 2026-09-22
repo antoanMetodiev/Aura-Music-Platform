@@ -18,6 +18,10 @@ import java.util.UUID;
  * {@link DiscographySyncStore} over the {@code discography_*} columns of {@code catalog.artists}.
  * {@code claimNext} is a single {@code UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED)} so
  * concurrent workers never claim the same artist.
+ *
+ * <p>{@code discography_requested_at} is what makes an artist eligible at all: it is set when
+ * somebody opens the artist's page and cleared once the sync lands. An artist nobody has opened is
+ * never claimed, however long it has been in the catalog.
  */
 @Repository
 public class ArtistDiscographyRepository implements DiscographySyncStore {
@@ -30,43 +34,28 @@ public class ArtistDiscographyRepository implements DiscographySyncStore {
 
     @Override
     @Transactional
-    public Optional<PendingArtist> claimNext(Duration refreshAfter, Duration retryAfter, Lane lane) {
+    public Optional<PendingArtist> claimNext(Duration retryAfter) {
         return jdbc.sql("""
                         UPDATE catalog.artists a
                         SET discography_attempted_at = now()
                         WHERE a.id = (
                             SELECT c.id FROM catalog.artists c
                             JOIN catalog.artist_provider_refs r ON r.artist_id = c.id AND r.provider = :provider
-                            WHERE (c.discography_synced_at IS NULL
-                                   OR c.discography_synced_at < now() - CAST(:refreshAfter AS interval)
-                                   -- A quick pull unblocked the page; the walk still owes it the rest (V17).
-                                   OR c.discography_depth = 'QUICK')
+                            WHERE c.discography_requested_at IS NOT NULL
                               AND (c.discography_attempted_at IS NULL OR c.discography_attempted_at < now() - CAST(:retryAfter AS interval))
-                              AND (NOT :onDemandOnly OR c.discography_requested_at IS NOT NULL)
-                            -- An artist someone has open right now goes first, whatever the walk was
-                            -- about to do (V16); the rest keep the original order, which leaves a
-                            -- quick-synced artist at the back — it already has something to show.
-                            ORDER BY (c.discography_requested_at IS NOT NULL) DESC,
-                                     c.discography_requested_at DESC NULLS LAST,
-                                     c.discography_attempted_at NULLS FIRST, c.created_at
+                            -- Whoever was opened last is the one most likely still on somebody's screen.
+                            ORDER BY c.discography_requested_at DESC
                             LIMIT 1
                             FOR UPDATE OF c SKIP LOCKED
                         )
                         RETURNING a.id, a.name,
-                            -- Somebody is waiting and we have nothing to show them yet: fetch the cheap
-                            -- version. Whichever lane won the claim, the answer is the same.
-                            CASE WHEN a.discography_requested_at IS NOT NULL AND a.discography_synced_at IS NULL
-                                 THEN 'QUICK' ELSE 'FULL' END AS depth,
                             (SELECT provider_resource_id FROM catalog.artist_provider_refs
                              WHERE artist_id = a.id AND provider = :provider) AS provider_resource_id
                         """)
                 .param("provider", Provider.TIDAL.name())
-                .param("refreshAfter", toInterval(refreshAfter))
                 .param("retryAfter", toInterval(retryAfter))
-                .param("onDemandOnly", lane == Lane.ON_DEMAND)
                 .query((rs, n) -> new PendingArtist((UUID) rs.getObject("id"), rs.getString("name"),
-                        new ProviderReference(Provider.TIDAL, rs.getString("provider_resource_id")),
-                        Depth.valueOf(rs.getString("depth"))))
+                        new ProviderReference(Provider.TIDAL, rs.getString("provider_resource_id"))))
                 .optional();
     }
 
@@ -80,16 +69,20 @@ public class ArtistDiscographyRepository implements DiscographySyncStore {
     }
 
     @Override
-    public void requestSync(Collection<UUID> artistIds) {
+    public void requestSync(Collection<UUID> artistIds, Duration refreshAfter) {
         if (artistIds.isEmpty()) return;
         // Bound as text[] and cast: pgjdbc encodes String[] natively, UUID[] it does not.
         String[] ids = artistIds.stream().map(UUID::toString).toArray(String[]::new);
         jdbc.sql("""
                         UPDATE catalog.artists
                         SET discography_requested_at = now()
-                        WHERE id = ANY(CAST(:ids AS uuid[])) AND discography_synced_at IS NULL
+                        WHERE id = ANY(CAST(:ids AS uuid[]))
+                          AND discography_requested_at IS NULL
+                          AND (discography_synced_at IS NULL
+                               OR discography_synced_at < now() - CAST(:refreshAfter AS interval))
                         """)
                 .param("ids", ids)
+                .param("refreshAfter", toInterval(refreshAfter))
                 .update();
     }
 
@@ -115,24 +108,25 @@ public class ArtistDiscographyRepository implements DiscographySyncStore {
     }
 
     @Override
-    public void markSynced(UUID artistId, int trackCount, Depth depth) {
-        // The request mark is cleared either way: a quick pull is what the person opening the page
-        // was waiting for, so it has served its purpose and must not keep jumping the queue.
+    public void markSynced(UUID artistId, int trackCount) {
+        // The request mark is cleared: it has been served, and leaving it would keep the artist in
+        // the queue for good.
         jdbc.sql("""
                         UPDATE catalog.artists
                         SET discography_synced_at = now(), discography_error = NULL, discography_track_count = :count,
-                            discography_depth = :depth, discography_requested_at = NULL
+                            discography_requested_at = NULL
                         WHERE id = :id
                         """)
                 .param("count", trackCount)
-                .param("depth", depth.name())
                 .param("id", artistId)
                 .update();
     }
 
     @Override
     public void markFailed(UUID artistId, String error) {
-        jdbc.sql("UPDATE catalog.artists SET discography_error = :error WHERE id = :id")
+        // Drops out of the queue: the retry happens if somebody opens the artist again, which is the
+        // only evidence that the page is still wanted.
+        jdbc.sql("UPDATE catalog.artists SET discography_error = :error, discography_requested_at = NULL WHERE id = :id")
                 .param("error", error == null ? "unknown" : error.substring(0, Math.min(error.length(), 500)))
                 .param("id", artistId)
                 .update();
@@ -140,6 +134,7 @@ public class ArtistDiscographyRepository implements DiscographySyncStore {
 
     @Override
     public void release(UUID artistId) {
+        // Keeps its place in the queue — the request mark stays, only the attempt stamp goes.
         jdbc.sql("UPDATE catalog.artists SET discography_attempted_at = NULL WHERE id = :id")
                 .param("id", artistId)
                 .update();
@@ -150,15 +145,11 @@ public class ArtistDiscographyRepository implements DiscographySyncStore {
         return jdbc.sql("""
                         SELECT
                             (SELECT count(*) FROM catalog.artists) AS artists_total,
-                            -- "Synced" means fully synced: a quick pull is enough for the page but the
-                            -- walk still owes this artist the rest, so it counts as pending (V17).
                             (SELECT count(*) FROM catalog.artists
-                             WHERE discography_synced_at >= now() - CAST(:refreshAfter AS interval)
-                               AND discography_depth = 'FULL') AS artists_synced,
+                             WHERE discography_synced_at >= now() - CAST(:refreshAfter AS interval)) AS artists_synced,
+                            -- "Pending" is the queue itself: artists somebody asked for and hasn't got yet.
                             (SELECT count(*) FROM catalog.artists
-                             WHERE discography_synced_at IS NULL
-                                OR discography_synced_at < now() - CAST(:refreshAfter AS interval)
-                                OR discography_depth = 'QUICK') AS artists_pending,
+                             WHERE discography_requested_at IS NOT NULL) AS artists_pending,
                             (SELECT count(*) FROM catalog.artists WHERE discography_error IS NOT NULL) AS artists_failed,
                             (SELECT count(*) FROM catalog.tracks) AS tracks_total
                         """)

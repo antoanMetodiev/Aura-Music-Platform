@@ -22,15 +22,11 @@ public interface MusicMetadataProvider {
 
     Optional<ProviderArtist> getArtist(String providerResourceId);
 
-    /** Every track the artist appears on (own releases and features). Empty if the artist is unknown. */
-    List<ProviderTrack> getArtistTracks(String providerResourceId);
-
     /**
-     * {@code quick} fetches only what an artist page needs — one entry per distinct recording, the
-     * first pages of it — for an artist somebody is waiting on. The full pull is what the catalog
-     * wants; nobody should sit in front of a loading screen for it.
+     * What an artist page needs: one entry per distinct recording (not per release), the first
+     * pages of it. Empty if the artist is unknown.
      */
-    List<ProviderTrack> getArtistTracks(String providerResourceId, boolean quick);
+    List<ProviderTrack> getArtistTracks(String providerResourceId);
 
     /** ISRC lookups can legitimately return several tracks (re-releases, regional variants). */
     List<ProviderTrack> findTracksByIsrc(String isrc);

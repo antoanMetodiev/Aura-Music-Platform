@@ -1,18 +1,17 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { Link, redirect } from "@/i18n/navigation";
+import { Link } from "@/i18n/navigation";
 import { routes } from "@/config/routes";
 import type { Locale } from "@/i18n/routing";
-import { getSession } from "@/lib/auth/session";
 
 /**
  * Sign-in / sign-up / password pages: no app shell, one centered card on the app gradient.
- * Someone already signed in has no business here and goes to Home.
+ * Login and register send a signed-in visitor to Home themselves; reset-password must not — the
+ * link from the reset email arrives with a (recovery) session already open.
  */
 export default async function AuthLayout({ children, params }: LayoutProps<"/[locale]">) {
   const { locale } = (await params) as { locale: Locale };
   setRequestLocale(locale);
 
-  if (await getSession()) redirect({ href: routes.home, locale });
   const t = await getTranslations({ locale, namespace: "auth" });
 
   return (

@@ -1,0 +1,41 @@
+name: Deploy front-end to Cloudflare Workers
+
+# The build runs on Linux on purpose: OpenNext's bundler symlinks traced node_modules, which
+# Windows refuses unless Developer Mode is on. CI has no such problem, so this is the reliable
+# path to production even when a local `npm run deploy` works.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "front-end/**"
+      - ".github/workflows/deploy-front-end.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: front-end
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: front-end/package-lock.json
+
+      - run: npm ci
+
+      # Fails the deploy on a type error rather than shipping it.
+      - run: npx tsc --noEmit
+
+      # NEXT_PUBLIC_* come from the committed .env.production (they are public by definition).
+      # Server-only secrets are not needed here — they live in the Worker, set once with
+      # `wrangler secret put`, and are read at runtime.
+      - name: Build and deploy
+        run: npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

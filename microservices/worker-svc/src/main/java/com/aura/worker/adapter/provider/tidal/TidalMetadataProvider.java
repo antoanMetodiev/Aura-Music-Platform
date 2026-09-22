@@ -95,25 +95,17 @@ public class TidalMetadataProvider implements MusicMetadataProvider {
                 .toList();
     }
 
-    /** Every track the artist appears on, own releases and features alike; no album positions (those come from the album sync). */
-    @Override
-    public List<ProviderTrack> getArtistTracks(String providerResourceId) {
-        return getArtistTracks(providerResourceId, false);
-    }
-
     /**
-     * {@code quick} is the version for an artist page somebody is waiting on: TIDAL's
-     * {@code FINGERPRINT} collapse (one entry per distinct recording, not per release) and only the
-     * first few pages of it. Glass Animals go from 1 243 rows and ~2 minutes to roughly sixty and a
-     * few seconds, which is all a page showing ten tracks was ever going to use. The full pull happens
-     * later, on the bulk lane — the catalog does want every release for album track lists and for
-     * playback's ISRC-sibling reuse.
+     * The artist's tracks as a page needs them: TIDAL's {@code FINGERPRINT} collapse (one entry per
+     * distinct recording, not per release) and only the first few pages of it. Glass Animals go from
+     * 1 243 rows and ~2 minutes to roughly sixty and a few seconds, which is all a page showing ten
+     * tracks was ever going to use. Fetching every release of every track is what used to fill the
+     * database with music nobody plays; the rest of an album arrives when its page is opened.
      */
     @Override
-    public List<ProviderTrack> getArtistTracks(String providerResourceId, boolean quick) {
-        String collapseBy = quick ? COLLAPSE_BY_RECORDING : properties.artistTracksCollapseBy();
-        int maxPages = quick ? properties.quickArtistTrackPages() : Integer.MAX_VALUE;
-        List<JsonApiLinkage> items = collectTrackLinkages(client.artistTracks(providerResourceId, collapseBy), maxPages);
+    public List<ProviderTrack> getArtistTracks(String providerResourceId) {
+        List<JsonApiLinkage> items = collectTrackLinkages(
+                client.artistTracks(providerResourceId, COLLAPSE_BY_RECORDING), properties.artistTrackPages());
         ResourceIndex index = hydrateTracks(items);
         return items.stream()
                 .map(l -> index.get(TYPE_TRACKS, l.id().id()).map(r -> mapper.toTrack(r, index)))

@@ -5,7 +5,8 @@ import { useFormatter, useTranslations } from "next-intl";
 import { getGreetingKey } from "@/lib/utils/format";
 
 interface GreetingHeaderProps {
-  name: string;
+  /** `null` for a guest — greeting only. */
+  name: string | null;
   liveFriends: number;
 }
 
@@ -28,7 +29,7 @@ export function GreetingHeader({ name, liveFriends }: GreetingHeaderProps) {
     <div className="flex flex-col gap-1">
       <p className="text-xs font-medium tracking-[0.18em] text-primary-hover uppercase">{date || " "}</p>
       <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-        {greeting}, {name}
+        {name ? `${greeting}, ${name}` : greeting}
       </h1>
       <p className="text-sm text-muted-foreground">
         {liveFriends > 0 ? (

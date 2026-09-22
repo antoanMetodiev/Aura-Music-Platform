@@ -1,0 +1,10 @@
+# Server-only values for `npm run preview` (the Worker running locally through wrangler).
+# Copy to `.dev.vars` — gitignored — and fill in. In production these are uploaded once with
+# `npx wrangler secret put <NAME>` and never live in a file.
+#
+# NEXT_PUBLIC_* values are NOT here: they are baked into the bundle at build time, so they belong
+# in .env.production (committed — they are public by definition).
+
+NEXTJS_ENV=development
+SUPABASE_SERVICE_ROLE_KEY=
+DATABASE_URL=

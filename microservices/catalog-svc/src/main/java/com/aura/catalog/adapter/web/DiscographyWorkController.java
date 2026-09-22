@@ -31,6 +31,9 @@ import java.util.UUID;
  * provider credentials), post back the result — or say it couldn't be fetched, in which case the
  * claim is undone and the artist keeps its place. catalog-svc stays the only writer of
  * {@code catalog.*} (Project-Info.md §6) while owning none of the provider's rate limit.
+ *
+ * <p>Only artists somebody has opened are ever handed out: the queue is filled by an artist page
+ * being requested, never by a walk over the catalog.
  */
 @RestController
 @RequestMapping("/api/v1/catalog/internal/discography")
@@ -42,14 +45,10 @@ public class DiscographyWorkController {
         this.service = service;
     }
 
-    /**
-     * @param lane {@code ON_DEMAND} claims only artists somebody has open right now — the lane that
-     *             keeps a waiting page from queueing behind a two-minute bulk fetch. Default {@code BULK}.
-     * @return the claimed artist, or 204 when this lane has nothing to do
-     */
+    /** @return the artist somebody is waiting for, or 204 when nobody is. */
     @PostMapping("/claim")
-    public ResponseEntity<DiscographyWork.Claim> claim(@RequestParam(value = "lane", required = false) String lane) {
-        return service.claimNext(parseLane(lane))
+    public ResponseEntity<DiscographyWork.Claim> claim() {
+        return service.claimNext()
                 .map(DiscographyWorkController::toClaim)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
@@ -64,30 +63,8 @@ public class DiscographyWorkController {
         String name = nameOf(artistId);
         ArtistDiscographyService.Outcome outcome = service.ingest(artistId, name, body.tracks().stream()
                 .map(DiscographyWorkController::toProviderTrack)
-                .toList(), parseDepth(body.depth()));
+                .toList());
         return new DiscographyWork.IngestResult(outcome.artistId(), outcome.name(), outcome.trackCount(), outcome.newArtists());
-    }
-
-    private static DiscographySyncStore.Lane parseLane(String value) {
-        if (value == null || value.isBlank()) return DiscographySyncStore.Lane.BULK;
-        try {
-            return DiscographySyncStore.Lane.valueOf(value.toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Unknown lane '" + value + "', expected ON_DEMAND or BULK");
-        }
-    }
-
-    /**
-     * A missing depth means FULL: the worker only ever omits it by being an older build, and recording
-     * a fetch as fuller than it was would leave the artist half-synced with nothing to fix it.
-     */
-    private static DiscographySyncStore.Depth parseDepth(String value) {
-        if (value == null || value.isBlank()) return DiscographySyncStore.Depth.FULL;
-        try {
-            return DiscographySyncStore.Depth.valueOf(value.toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Unknown depth '" + value + "', expected QUICK or FULL");
-        }
     }
 
     /** The provider was unreachable — undo the claim, nothing is known about this artist. */
@@ -114,7 +91,7 @@ public class DiscographyWorkController {
 
     private static DiscographyWork.Claim toClaim(PendingArtist artist) {
         return new DiscographyWork.Claim(artist.id(), artist.name(),
-                artist.ref().provider().name(), artist.ref().providerResourceId(), artist.depth().name());
+                artist.ref().provider().name(), artist.ref().providerResourceId());
     }
 
     // ── Wire → domain ──────────────────────────────────────────────────────────────────────

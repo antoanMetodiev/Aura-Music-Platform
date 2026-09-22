@@ -5,12 +5,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLocale, useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/common/FormError";
+import { FormField } from "@/components/common/FormField";
 import { routes } from "@/config/routes";
-import { authClient } from "@/lib/auth/client";
-import { forgotPasswordSchema, type ForgotPasswordValues } from "../schemas/auth";
+import { supabaseBrowser } from "@/lib/supabase/browser";
+import { callbackUrl } from "../lib/callback";
 import { useAuthErrorText } from "../lib/errors";
-import { FormError } from "./FormError";
-import { FormField } from "./FormField";
+import { forgotPasswordSchema, type ForgotPasswordValues } from "../schemas/auth";
 
 export function ForgotPasswordForm() {
   const t = useTranslations("auth");
@@ -26,9 +27,10 @@ export function ForgotPasswordForm() {
 
   const onSubmit = async (values: ForgotPasswordValues) => {
     setFormError(null);
-    const { error } = await authClient.requestPasswordReset({
-      email: values.email,
-      redirectTo: `/${locale}${routes.resetPassword}`,
+    // The link in the mail comes back through /api/auth/callback, which opens a recovery session
+    // and lands on /reset-password.
+    const { error } = await supabaseBrowser().auth.resetPasswordForEmail(values.email, {
+      redirectTo: callbackUrl(`/${locale}${routes.resetPassword}`),
     });
     if (error) {
       setFormError(errorText.fromApi(error));
@@ -40,9 +42,7 @@ export function ForgotPasswordForm() {
 
   if (sentTo) {
     return (
-      <p className="rounded-lg border border-border bg-elevated/60 px-4 py-3 text-sm">
-        {t("forgot.sent", { email: sentTo })}
-      </p>
+      <p className="rounded-lg border border-border bg-elevated/60 px-4 py-3 text-sm">{t("forgot.sent", { email: sentTo })}</p>
     );
   }
 

@@ -2,6 +2,7 @@ package com.aura.catalog.domain.service;
 
 import com.aura.catalog.config.AppConfig;
 import com.aura.catalog.config.CatalogProperties;
+import com.aura.catalog.config.DiscographySyncProperties;
 import com.aura.catalog.domain.model.Album;
 import com.aura.catalog.domain.model.Artist;
 import com.aura.catalog.domain.model.ProviderReference;
@@ -61,6 +62,7 @@ public class CatalogService {
     private final MusicMetadataProvider metadata;
     private final MusicSearchProvider search;
     private final CatalogProperties properties;
+    private final DiscographySyncProperties discographyProperties;
     private final Clock clock;
     private final ExecutorService refreshExecutor;
     private final Cache<String, Hydrated> memory;
@@ -71,6 +73,7 @@ public class CatalogService {
                           MusicMetadataProvider metadata,
                           MusicSearchProvider search,
                           CatalogProperties properties,
+                          DiscographySyncProperties discographyProperties,
                           Clock clock,
                           @AppConfig.HttpIo ExecutorService httpIoExecutor) {
         this.store = store;
@@ -78,6 +81,7 @@ public class CatalogService {
         this.metadata = metadata;
         this.search = search;
         this.properties = properties;
+        this.discographyProperties = discographyProperties;
         this.clock = clock;
         this.refreshExecutor = httpIoExecutor;
         this.memory = Caffeine.newBuilder()
@@ -463,9 +467,8 @@ public class CatalogService {
 
     /**
      * The artist's most popular tracks, one entry per recording, gathered across every duplicate
-     * profile in the group. The first time an artist is opened before the background sync reached
-     * them, their discography is pulled right now (same call the worker makes) so the page is
-     * complete rather than showing the two tracks a search happened to bring in.
+     * profile in the group. Opening the artist also puts them in the sync queue, so a page that is
+     * thin on the first visit (only what a search brought in) fills in within seconds.
      */
     public List<Track> getArtistTopTracks(UUID artistId, int limit) {
         return getArtistTopTracks(artistId, limit, false);
@@ -497,7 +500,7 @@ public class CatalogService {
         Artist artist = canonical(store.findArtistById(artistId)
                 .orElseThrow(() -> new CatalogEntityNotFoundException("Artist", artistId)));
         List<UUID> group = store.findArtistGroupIds(artist.id());
-        if (requestSync) discography.requestSync(group);
+        if (requestSync) discography.requestSync(group, discographyProperties.refreshAfter());
         return group;
     }
 

@@ -73,6 +73,7 @@ aura:
     # Queue semantics for the discography sync — how long an answer stays good, how soon a failure is
     # retried. The sync itself runs in worker-svc on its own TIDAL credentials (it claims an artist
     # through /internal/discography and posts the tracks back), so the pacing lives there, not here.
+    # Only artists somebody opens enter the queue; nothing walks the catalog on its own any more.
     discography-sync:
       refresh-after: 30d
       retry-after: 1h

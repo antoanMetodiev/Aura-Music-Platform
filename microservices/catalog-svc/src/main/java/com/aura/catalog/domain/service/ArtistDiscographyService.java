@@ -57,11 +57,11 @@ public class ArtistDiscographyService {
     }
 
     /**
-     * Hands out the next artist due a sync and stamps the claim, so a second worker (or a retry of
-     * the same one) doesn't pick it up again. Empty when there is nothing to do.
+     * Hands out the next artist somebody has asked for and stamps the claim, so a second worker (or
+     * a retry of the same one) doesn't pick it up again. Empty when nobody is waiting for anything.
      */
-    public Optional<PendingArtist> claimNext(DiscographySyncStore.Lane lane) {
-        return queue.claimNext(properties.refreshAfter(), properties.retryAfter(), lane);
+    public Optional<PendingArtist> claimNext() {
+        return queue.claimNext(properties.retryAfter());
     }
 
     /**
@@ -69,10 +69,10 @@ public class ArtistDiscographyService {
      * stamp. Same-named artist profiles are merged right after — the tracks just stored are the
      * evidence that they are one act (V14).
      */
-    public Outcome ingest(UUID artistId, String name, List<ProviderTrack> tracks, DiscographySyncStore.Depth depth) {
+    public Outcome ingest(UUID artistId, String name, List<ProviderTrack> tracks) {
         long artistsBefore = queue.stats(properties.refreshAfter()).artistsTotal();
         UpsertedBatch persisted = store.upsertBatch(tracks, List.of(), List.of());
-        queue.markSynced(artistId, persisted.tracks().size(), depth);
+        queue.markSynced(artistId, persisted.tracks().size());
         artistMerge.mergeDuplicatesNamed(name);
         long newArtists = queue.stats(properties.refreshAfter()).artistsTotal() - artistsBefore;
 

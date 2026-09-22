@@ -21,13 +21,8 @@ public final class DiscographyWork {
     private DiscographyWork() {
     }
 
-    /**
-     * An artist claimed for syncing. The claim is already stamped, so nobody else will take it.
-     *
-     * @param depth {@code QUICK} when somebody is waiting for this artist and we have nothing to show
-     *              them yet — fetch one entry per recording and no more; {@code FULL} otherwise
-     */
-    public record Claim(UUID artistId, String name, String provider, String providerResourceId, String depth) {
+    /** An artist claimed for syncing. The claim is already stamped, so nobody else will take it. */
+    public record Claim(UUID artistId, String name, String provider, String providerResourceId) {
     }
 
     public record Ref(String provider, String providerResourceId) {
@@ -48,7 +43,7 @@ public final class DiscographyWork {
     }
 
     /** What the worker posts back after a successful fetch. */
-    public record Ingest(List<Track> tracks, String depth) {
+    public record Ingest(List<Track> tracks) {
     }
 
     /**

@@ -1,25 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useTranslations } from "next-intl";
-import { useSearchParams } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/common/FormError";
+import { FormField } from "@/components/common/FormField";
 import { Link } from "@/i18n/navigation";
 import { routes } from "@/config/routes";
-import { authClient } from "@/lib/auth/client";
-import { resetPasswordSchema, type ResetPasswordValues } from "../schemas/auth";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 import { useAuthErrorText } from "../lib/errors";
-import { FormError } from "./FormError";
-import { FormField } from "./FormField";
+import { resetPasswordSchema, type ResetPasswordValues } from "../schemas/auth";
 
-/** Landing form for the link in the reset email (`?token=`). */
+/**
+ * Landing form for the link in the reset email. /api/auth/callback has already turned the link
+ * into a signed-in (recovery) session by the time this renders; without one the link was stale.
+ */
 export function ResetPasswordForm() {
   const t = useTranslations("auth");
   const errorText = useAuthErrorText();
-  const searchParams = useSearchParams();
-  const token = searchParams.get("token");
+  const locale = useLocale();
+  const [hasSession, setHasSession] = useState<boolean | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const {
@@ -28,8 +30,15 @@ export function ResetPasswordForm() {
     formState: { errors, isSubmitting },
   } = useForm<ResetPasswordValues>({ resolver: zodResolver(resetPasswordSchema) });
 
-  // Better Auth lands here with `?error=INVALID_TOKEN` when the link is stale.
-  if (!token || searchParams.get("error")) {
+  useEffect(() => {
+    supabaseBrowser()
+      .auth.getSession()
+      .then(({ data }) => setHasSession(Boolean(data.session)));
+  }, []);
+
+  if (hasSession === null) return null;
+
+  if (!hasSession) {
     return (
       <div className="flex flex-col gap-4">
         <FormError message={t("reset.invalid")} />
@@ -44,8 +53,8 @@ export function ResetPasswordForm() {
     return (
       <div className="flex flex-col gap-4">
         <p className="rounded-lg border border-border bg-elevated/60 px-4 py-3 text-sm">{t("reset.done")}</p>
-        <Button size="lg" className="h-10 w-full" render={<Link href={routes.login} />}>
-          {t("login.submit")}
+        <Button size="lg" className="h-10 w-full" nativeButton={false} render={<a href={`/${locale}${routes.home}`} />}>
+          {t("reset.continue")}
         </Button>
       </div>
     );
@@ -53,9 +62,9 @@ export function ResetPasswordForm() {
 
   const onSubmit = async (values: ResetPasswordValues) => {
     setFormError(null);
-    const { error } = await authClient.resetPassword({ newPassword: values.password, token });
+    const { error } = await supabaseBrowser().auth.updateUser({ password: values.password });
     if (error) {
-      setFormError(error.code === "INVALID_TOKEN" ? t("reset.invalid") : errorText.fromApi(error));
+      setFormError(errorText.fromApi(error));
       return;
     }
     setDone(true);
