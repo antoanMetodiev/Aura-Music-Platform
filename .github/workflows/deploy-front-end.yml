@@ -3,12 +3,9 @@ name: Deploy front-end to Cloudflare Workers
 # The build runs on Linux on purpose: OpenNext's bundler symlinks traced node_modules, which
 # Windows refuses unless Developer Mode is on. CI has no such problem, so this is the reliable
 # path to production even when a local `npm run deploy` works.
+# Manual only: Cloudflare Workers Builds (Git integration, root directory `front-end`) deploys on
+# every push to main. Running this on push too would deploy twice. Kept as a manual fallback.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "front-end/**"
-      - ".github/workflows/deploy-front-end.yml"
   workflow_dispatch:
 
 jobs:

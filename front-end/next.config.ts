@@ -5,6 +5,12 @@ import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 const nextConfig: NextConfig = {
+  // `pg` loads `pg-cloudflare` on Workers. Its package exports the real socket only under the
+  // `workerd` condition and an empty stub otherwise, so Next's (Node-condition) file tracing copies
+  // just the stub and OpenNext's Workers bundle fails with `Could not resolve "pg-cloudflare"`.
+  outputFileTracingIncludes: {
+    "/*": ["./node_modules/pg-cloudflare/**/*"],
+  },
   images: {
     remotePatterns: [
       // TEMPORARY: seeded placeholder artwork for the mock catalog (Home still uses it).
