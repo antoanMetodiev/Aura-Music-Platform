@@ -3,7 +3,8 @@ import { FullscreenPlayer } from "@/features/player/components/FullscreenPlayer"
 import { PlaybackEngine } from "@/features/player/components/PlaybackEngine";
 import { PlayerBar } from "@/features/player/components/PlayerBar";
 import { MiniPlayer } from "@/features/player/components/MiniPlayer";
-import type { PlaylistSummary } from "@/types/catalog";
+import { LibraryBootstrap } from "@/features/library/components/LibraryBootstrap";
+import type { LibraryPlaylist } from "@/features/library/api/libraryApi";
 import type { ActivityItem, FriendPresence, UserSummary } from "@/types/social";
 import { MobileBottomNav } from "./MobileBottomNav";
 import { Toaster } from "@/components/ui/sonner";
@@ -15,7 +16,8 @@ import { TopBar } from "./TopBar";
 interface AppShellProps {
   /** `null` for a guest — the shell still renders, with sign-in / sign-up in the top bar. */
   user: UserSummary | null;
-  playlists: PlaylistSummary[];
+  /** The signed-in user's playlists; `null` for a guest or when library-svc didn't answer. */
+  playlists: LibraryPlaylist[] | null;
   presence: FriendPresence[];
   activity: ActivityItem[];
   unreadNotifications?: number;
@@ -36,10 +38,11 @@ export function AppShell({ user, playlists, presence, activity, unreadNotificati
       <PlaybackEngine />
       <FullscreenPlayer />
       <UiStateHydrator />
+      <LibraryBootstrap signedIn={user !== null} playlists={playlists} />
       <Toaster position="bottom-center" offset={96} />
 
       <div className="flex min-h-0 flex-1 p-2 max-md:p-0">
-        <Sidebar playlists={playlists} />
+        <Sidebar playlists={playlists ?? []} signedIn={user !== null} />
 
         <main
           id="main"

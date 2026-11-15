@@ -44,7 +44,8 @@
     "mobile": "Mobile",
     "resize": "Resize sidebar",
     "resizeHint": "Drag to resize · double-click to reset",
-    "noPlaylists": "Your playlists will show up here."
+    "noPlaylists": "Your playlists will show up here.",
+    "playlistMetaCount": "Playlist · {count, plural, =1 {1 song} other {# songs}}"
   },
   "languages": {
     "en": "English",
@@ -422,5 +423,42 @@
       "PASSWORD_NOT_APPLICABLE": "This account has no password.",
       "PROVIDER_ERROR": "Something went wrong on our side. Please try again."
     }
+  },
+  "library": {
+    "defaultPlaylistTitle": "My playlist #{n}",
+    "addedTo": "Added to “{title}”",
+    "createFailed": "Couldn’t create the playlist. Try again.",
+    "likedToast": "Added to Liked songs",
+    "unlikedToast": "Removed from Liked songs",
+    "likeFailed": "Couldn’t save that. Try again.",
+    "removeFromLiked": "Remove from Liked songs",
+    "saveToLiked": "Save to Liked songs",
+    "moreOptions": "More options",
+    "addToPlaylist": "Add to playlist",
+    "newPlaylist": "New playlist",
+    "yourPlaylists": "Your playlists",
+    "addFailed": "Couldn’t add the song. Try again.",
+    "removeFromPlaylist": "Remove from this playlist",
+    "songs": "{count, plural, =0 {No songs} =1 {1 song} other {# songs}}",
+    "signIn": "Sign in",
+    "signInForLiked": "Sign in to see the songs you’ve liked.",
+    "signInForLibrary": "Sign in to see your playlists and liked songs.",
+    "signInForPlaylist": "Sign in to open this playlist.",
+    "playlist": "Playlist",
+    "unavailable": "Your library is unavailable right now. Try again in a moment.",
+    "noLikedYet": "No liked songs yet",
+    "noLikedYetHint": "Tap ♥ next to any song and it shows up here.",
+    "saveFailed": "Couldn’t save the change.",
+    "removeFailed": "Couldn’t remove the song.",
+    "deleted": "“{title}” deleted",
+    "deleteFailed": "Couldn’t delete the playlist.",
+    "rename": "Rename",
+    "publicPlaylist": "Public playlist",
+    "privatePlaylist": "Private playlist",
+    "makePrivate": "Make private",
+    "makePublic": "Make public",
+    "deletePlaylist": "Delete",
+    "emptyPlaylist": "This playlist is empty",
+    "emptyPlaylistHint": "Add songs from the ⋯ menu next to any song."
   }
 }

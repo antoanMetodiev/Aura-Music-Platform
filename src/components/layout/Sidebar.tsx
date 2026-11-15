@@ -21,6 +21,8 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ArtworkImage } from "@/components/common/ArtworkImage";
 import type { PlaylistSummary } from "@/types/catalog";
+import { useLibraryStore } from "@/features/library/store/library-store";
+import { useCreatePlaylist } from "@/features/library/hooks/useCreatePlaylist";
 import { AuraLogo } from "./AuraLogo";
 import { ResizeHandle } from "./ResizeHandle";
 
@@ -40,7 +42,9 @@ const secondaryNav: typeof primaryNav = [
 ];
 
 interface SidebarProps {
+  /** What the server rendered; the library store takes over once it has loaded. */
   playlists: PlaylistSummary[];
+  signedIn: boolean;
 }
 
 /**
@@ -49,9 +53,13 @@ interface SidebarProps {
  *   ≥ lg  : full width, user-collapsible to the same icon rail
  * Below md the MobileBottomNav takes over.
  */
-export function Sidebar({ playlists }: SidebarProps) {
+export function Sidebar({ playlists: initialPlaylists, signedIn }: SidebarProps) {
+  // Guests see an empty list (and the + sends them to sign in); `signedIn` gates the store's list.
   const t = useTranslations("nav");
   const pathname = usePathname();
+  const stored = useLibraryStore((s) => s.playlists);
+  const playlists = signedIn ? (stored ?? initialPlaylists) : [];
+  const createPlaylist = useCreatePlaylist();
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const width = useUiStore((s) => s.sidebarWidth);
   const resizing = useUiStore((s) => s.resizing);
@@ -114,7 +122,9 @@ export function Sidebar({ playlists }: SidebarProps) {
           {t("playlists")}
         </span>
         <Tooltip>
-          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("createPlaylist")} />}>
+          <TooltipTrigger
+            render={<Button variant="ghost" size="icon-sm" aria-label={t("createPlaylist")} onClick={() => void createPlaylist()} />}
+          >
             <Plus className="text-muted-foreground" />
           </TooltipTrigger>
           <TooltipContent side="right">{t("createPlaylist")}</TooltipContent>
@@ -150,7 +160,7 @@ export function Sidebar({ playlists }: SidebarProps) {
                   {playlist.title}
                 </span>
                 <span className="block truncate text-xs text-muted-foreground">
-                  {t("playlistMeta", { owner: playlist.owner.displayName, count: playlist.trackCount })}
+                  {t("playlistMetaCount", { count: playlist.trackCount })}
                 </span>
               </span>
             </Link>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo } from "react";
-import { Clapperboard, Heart, ImageIcon, Music2, Share2 } from "lucide-react";
+import { Clapperboard, ImageIcon, Music2, Share2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { routes } from "@/config/routes";
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { useUiStore } from "@/lib/store/ui-store";
 import { getUpNext, usePlayerStore } from "../store/player-store";
 import { useVideoSurfaceStore } from "../store/video-surface-store";
+import { LikeButton } from "@/features/library/components/LikeButton";
 
 /** Right-panel "Now Playing" tab. Big artwork, meta, source badge, up next. */
 export function NowPlayingPanel() {
@@ -106,9 +107,7 @@ export function NowPlayingPanel() {
             ))}
           </p>
         </div>
-        <Button variant="ghost" size="icon" aria-label={common("like")}>
-          <Heart className="text-muted-foreground" />
-        </Button>
+        <LikeButton trackId={current.id} className="size-9" />
         <Button variant="ghost" size="icon" aria-label={common("share")}>
           <Share2 className="text-muted-foreground" />
         </Button>

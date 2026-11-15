@@ -1,12 +1,13 @@
 "use client";
 
-import { Heart, Pause, Play, SkipForward } from "lucide-react";
+import { Pause, Play, SkipForward } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { joinArtists } from "@/lib/utils/format";
 import { ArtworkImage } from "@/components/common/ArtworkImage";
 import { useUiStore } from "@/lib/store/ui-store";
 import { usePlayerStore } from "../store/player-store";
+import { LikeButton } from "@/features/library/components/LikeButton";
 
 /**
  * Compact mobile player docked above the bottom nav. Tapping the body will open
@@ -32,9 +33,7 @@ export function MiniPlayer({ className }: { className?: string }) {
           <span className="block truncate text-sm font-medium">{current.title}</span>
           <span className="block truncate text-xs text-muted-foreground">{joinArtists(current.artists)}</span>
         </button>
-        <button type="button" aria-label={t("saveToLiked")} className="grid size-10 place-items-center text-muted-foreground">
-          <Heart className="size-5" />
-        </button>
+        <LikeButton trackId={current.id} className="size-10" iconClassName="size-5" />
         <button type="button" aria-label={isPlaying ? t("pause") : t("play")} onClick={toggle} className="grid size-10 place-items-center">
           {isPlaying ? <Pause className="size-5 fill-current" /> : <Play className="size-5 translate-x-px fill-current" />}
         </button>

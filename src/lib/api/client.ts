@@ -29,6 +29,10 @@ interface ApiFetchOptions {
    * Public catalog/playback calls leave it out.
    */
   token?: string | null;
+  /** Defaults to GET. */
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  /** Sent as JSON. */
+  body?: unknown;
 }
 
 /**
@@ -50,13 +54,16 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
 
   let response: Response;
   try {
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (options.token) headers.Authorization = `Bearer ${options.token}`;
+    if (options.body !== undefined) headers["Content-Type"] = "application/json";
     response = await fetch(url, {
+      method: options.method ?? "GET",
       cache: "no-store",
       next: options.next,
       signal: options.signal,
-      headers: options.token
-        ? { Accept: "application/json", Authorization: `Bearer ${options.token}` }
-        : { Accept: "application/json" },
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
   } catch (cause) {
     // Backend unreachable (not running, wrong URL, network blip) — distinguish from a real API error
@@ -73,6 +80,8 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     });
   }
 
+  // 204 No Content (PUT/DELETE on the library) has no body to parse.
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { AudioLines, Heart, ListMusic, Maximize2, MicVocal, Users } from "lucide-react";
+import { AudioLines, ListMusic, Maximize2, MicVocal, Users } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { routes } from "@/config/routes";
@@ -9,6 +9,7 @@ import { type RightPanelTab, useUiStore } from "@/lib/store/ui-store";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ArtworkImage } from "@/components/common/ArtworkImage";
 import { usePlayerStore } from "../store/player-store";
+import { LikeButton } from "@/features/library/components/LikeButton";
 import { PlaybackControls } from "./PlaybackControls";
 import { ProgressBar } from "./ProgressBar";
 import { VolumeControl } from "./VolumeControl";
@@ -70,20 +71,7 @@ export function PlayerBar() {
                 ))}
               </p>
             </div>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-label={t("saveToLiked")}
-                    className="ml-1 grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:text-foreground"
-                  />
-                }
-              >
-                <Heart className="size-4" />
-              </TooltipTrigger>
-              <TooltipContent>{t("saveToLiked")}</TooltipContent>
-            </Tooltip>
+            <LikeButton trackId={current.id} className="ml-1" />
           </>
         ) : (
           <div className="flex items-center gap-3 text-muted-foreground">

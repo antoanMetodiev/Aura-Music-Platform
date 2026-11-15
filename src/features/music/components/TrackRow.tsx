@@ -9,6 +9,8 @@ import { formatDuration } from "@/lib/utils/format";
 import { ArtworkImage } from "@/components/common/ArtworkImage";
 import { EqualizerBars } from "@/features/player/components/EqualizerBars";
 import { usePlayerStore } from "@/features/player/store/player-store";
+import { LikeButton } from "@/features/library/components/LikeButton";
+import { TrackMenu } from "@/features/library/components/TrackMenu";
 import type { Track } from "@/types/catalog";
 
 interface TrackRowProps {
@@ -18,11 +20,13 @@ interface TrackRowProps {
   context: Track[];
   /** "md" = slightly larger artwork and type, for short lists sat next to a tall card. */
   size?: "sm" | "md";
+  /** Set on a playlist the user owns — adds "Remove from this playlist" to the row's menu. */
+  onRemove?: () => void;
   className?: string;
 }
 
 /** Compact track row for lists without a table header (search results; album/playlist pages later). */
-export function TrackRow({ index, track, context, size = "sm", className }: TrackRowProps) {
+export function TrackRow({ index, track, context, size = "sm", onRemove, className }: TrackRowProps) {
   const t = useTranslations("common");
   const current = usePlayerStore((s) => s.current);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -83,7 +87,11 @@ export function TrackRow({ index, track, context, size = "sm", className }: Trac
         </p>
       </div>
 
-      <span className="font-mono text-xs tabular-nums text-subtle-foreground">{formatDuration(track.durationMs)}</span>
+      <div className="flex items-center gap-1">
+        <LikeButton trackId={track.id} revealOnHover />
+        <span className="w-10 text-right font-mono text-xs tabular-nums text-subtle-foreground">{formatDuration(track.durationMs)}</span>
+        <TrackMenu trackId={track.id} onRemove={onRemove} />
+      </div>
     </li>
   );
 }
