@@ -1,6 +1,7 @@
 import { useTranslations } from "next-intl";
 import { formatTotalDuration } from "@/lib/utils/format";
 import type { Track } from "@/types/catalog";
+import { SaveToggleButton } from "@/features/library/components/SaveToggleButton";
 import { PlayButton } from "./PlayButton";
 import { TrackRow } from "./TrackRow";
 
@@ -19,6 +20,7 @@ export function AlbumTrackList({ albumId, tracks }: AlbumTrackListProps) {
     <section className="flex flex-col gap-4">
       <div className="flex items-center gap-4 px-3">
         <PlayButton tracks={tracks} contextId={albumId} size="lg" />
+        <SaveToggleButton collection="saved-albums" id={albumId} />
         <p className="text-sm text-muted-foreground">
           {t("songs", { count: tracks.length })} · {formatTotalDuration(totalMs)}
         </p>

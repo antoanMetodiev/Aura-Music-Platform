@@ -2,6 +2,7 @@ import { BadgeCheck } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { ArtworkImage } from "@/components/common/ArtworkImage";
 import type { Artist } from "@/types/catalog";
+import { SaveToggleButton } from "@/features/library/components/SaveToggleButton";
 
 /**
  * Artist page header: the artist's photo bleeds across the top as a dimmed backdrop, with the
@@ -35,6 +36,7 @@ export function ArtistHero({ artist }: { artist: Artist }) {
             {t("eyebrow")}
           </p>
           <h1 className="mt-2 line-clamp-2 text-4xl font-black tracking-tight text-balance sm:text-6xl lg:text-7xl">{artist.name}</h1>
+          <SaveToggleButton collection="saved-artists" id={artist.id} className="mt-4 border-white/40 bg-black/20 backdrop-blur-sm" />
         </div>
       </div>
     </header>

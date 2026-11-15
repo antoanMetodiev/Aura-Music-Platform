@@ -4,6 +4,7 @@ import { PlaybackEngine } from "@/features/player/components/PlaybackEngine";
 import { PlayerBar } from "@/features/player/components/PlayerBar";
 import { MiniPlayer } from "@/features/player/components/MiniPlayer";
 import { LibraryBootstrap } from "@/features/library/components/LibraryBootstrap";
+import { ListenTracker } from "@/features/activity/components/ListenTracker";
 import type { LibraryPlaylist } from "@/features/library/api/libraryApi";
 import type { ActivityItem, FriendPresence, UserSummary } from "@/types/social";
 import { MobileBottomNav } from "./MobileBottomNav";
@@ -39,6 +40,7 @@ export function AppShell({ user, playlists, presence, activity, unreadNotificati
       <FullscreenPlayer />
       <UiStateHydrator />
       <LibraryBootstrap signedIn={user !== null} playlists={playlists} />
+      <ListenTracker signedIn={user !== null} />
       <Toaster position="bottom-center" offset={96} />
 
       <div className="flex min-h-0 flex-1 p-2 max-md:p-0">

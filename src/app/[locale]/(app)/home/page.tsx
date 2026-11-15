@@ -3,7 +3,8 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { Locale } from "@/i18n/routing";
 import { routes } from "@/config/routes";
 import { Link } from "@/i18n/navigation";
-import { getSession } from "@/lib/auth/session";
+import { getAccessToken, getSession } from "@/lib/auth/session";
+import { getRecentlyPlayed, type RecentlyPlayed } from "@/features/activity/api/activityApi";
 import { joinArtists } from "@/lib/utils/format";
 import { getHomeFeed, type HomeFeed } from "@/features/home/api/homeApi";
 import { GreetingHeader } from "@/features/home/components/GreetingHeader";
@@ -35,15 +36,20 @@ export default async function HomePage({ params }: PageProps<"/[locale]/home">) 
   const { locale } = (await params) as { locale: Locale };
   setRequestLocale(locale);
   const t = await getTranslations("home");
-  // Guests get the greeting without a name.
-  const displayName = (await getSession())?.user.name ?? null;
+  // Guests get the greeting without a name, and no Recently played.
+  const session = await getSession();
+  const displayName = session?.user.name ?? null;
 
-  let feed: HomeFeed | null = null;
-  try {
-    feed = await getHomeFeed();
-  } catch {
-    // Render's free tier can be asleep or a service down — the page still renders, with a notice.
-  }
+  // Both are optional: Render's free tier can be asleep or a service down — the page still renders.
+  const [feed, recent] = await Promise.all([
+    getHomeFeed().catch((): HomeFeed | null => null),
+    session
+      ? getAccessToken()
+          .then((token) => getRecentlyPlayed(token, 12))
+          .catch((): RecentlyPlayed[] => [])
+      : Promise.resolve<RecentlyPlayed[]>([]),
+  ]);
+  const recentTracks = recent.map((r) => r.track);
 
   const sections = withoutRepeats(
     (feed?.sections ?? []).filter((s): s is { key: keyof typeof SECTION_TITLES; tracks: Track[] } => s.key in SECTION_TITLES),
@@ -60,6 +66,22 @@ export default async function HomePage({ params }: PageProps<"/[locale]/home">) 
         <div className="px-3">
           <GreetingHeader name={displayName} />
         </div>
+
+        {recentTracks.length > 0 && (
+          <HorizontalSection title={t("sections.recentlyPlayed")} href={routes.recentlyPlayed}>
+            {recentTracks.map((track, index) => (
+              <MediaCard
+                key={track.id}
+                href={routes.track(track.id)}
+                title={track.title}
+                subtitle={joinArtists(track.artists)}
+                artwork={track.artwork ?? track.album.artwork}
+                seed={track.id}
+                tracks={recentTracks.slice(index)}
+              />
+            ))}
+          </HorizontalSection>
+        )}
 
         {sections.length === 0 && (
           <p className="mx-3 rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">

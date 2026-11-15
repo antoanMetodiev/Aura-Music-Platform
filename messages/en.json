@@ -459,6 +459,24 @@
     "makePublic": "Make public",
     "deletePlaylist": "Delete",
     "emptyPlaylist": "This playlist is empty",
-    "emptyPlaylistHint": "Add songs from the ⋯ menu next to any song."
+    "emptyPlaylistHint": "Add songs from the ⋯ menu next to any song.",
+    "saveAlbum": "Save",
+    "savedAlbum": "Saved",
+    "follow": "Follow",
+    "following": "Following",
+    "albumSavedToast": "Album saved to your Library",
+    "albumRemovedToast": "Album removed from your Library",
+    "followedToast": "You now follow this artist",
+    "unfollowedToast": "You no longer follow this artist",
+    "albums": "Albums",
+    "artists": "Artists",
+    "artist": "Artist"
+  },
+  "activity": {
+    "signIn": "Sign in",
+    "signInForHistory": "Sign in to see what you’ve been listening to.",
+    "unavailable": "Your history is unavailable right now. Try again in a moment.",
+    "nothingYet": "Nothing played yet",
+    "nothingYetHint": "Play a song for at least half a minute and it shows up here."
   }
 }

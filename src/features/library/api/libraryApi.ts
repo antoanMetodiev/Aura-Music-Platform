@@ -1,7 +1,7 @@
 import { apiFetch } from "@/lib/api/client";
-import { toTrack } from "@/features/music/api/catalogMappers";
-import type { ArtworkDto, TrackDto } from "@/types/api";
-import type { PlaylistSummary, Track } from "@/types/catalog";
+import { toAlbum, toArtist, toTrack } from "@/features/music/api/catalogMappers";
+import type { AlbumDto, ArtistDto, ArtworkDto, TrackDto } from "@/types/api";
+import type { Album, Artist, PlaylistSummary, Track } from "@/types/catalog";
 
 /**
  * library-svc (`/library/**`). Every call is user-scoped: client code passes
@@ -124,4 +124,27 @@ export async function addTracksToPlaylist(token: string | null, id: string, trac
 
 export async function removePlaylistItem(token: string | null, id: string, itemId: string): Promise<void> {
   await apiFetch<void>(`/library/playlists/${id}/items/${itemId}`, { token, method: "DELETE" });
+}
+
+// ── Saved albums / followed artists ──────────────────────────────────────────────────────
+
+export type SavedCollection = "saved-albums" | "saved-artists";
+
+export async function savedContains(token: string | null, collection: SavedCollection, id: string): Promise<boolean> {
+  const [saved] = await apiFetch<boolean[]>(`/library/${collection}/contains`, { token, searchParams: { ids: id } });
+  return saved ?? false;
+}
+
+export async function setSaved(token: string | null, collection: SavedCollection, id: string, saved: boolean): Promise<void> {
+  await apiFetch<void>(`/library/${collection}/${id}`, { token, method: saved ? "PUT" : "DELETE" });
+}
+
+export async function getSavedAlbums(token: string | null, limit = 50): Promise<Album[]> {
+  const dto = await apiFetch<SavedPageDto<AlbumDto>>("/library/saved-albums", { token, searchParams: { limit } });
+  return dto.items.map((i) => toAlbum(i.item));
+}
+
+export async function getFollowedArtists(token: string | null, limit = 50): Promise<Artist[]> {
+  const dto = await apiFetch<SavedPageDto<ArtistDto>>("/library/saved-artists", { token, searchParams: { limit } });
+  return dto.items.map((i) => toArtist(i.item));
 }
