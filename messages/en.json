@@ -43,7 +43,8 @@
     "personal": "Personal",
     "mobile": "Mobile",
     "resize": "Resize sidebar",
-    "resizeHint": "Drag to resize · double-click to reset"
+    "resizeHint": "Drag to resize · double-click to reset",
+    "noPlaylists": "Your playlists will show up here."
   },
   "languages": {
     "en": "English",
@@ -117,7 +118,8 @@
     "surface": "Now playing view",
     "surfaceArtwork": "Artwork",
     "surfaceVideo": "Video",
-    "videoBadge": "Video"
+    "videoBadge": "Video",
+    "noActivity": "No activity yet."
   },
   "presence": {
     "listening": "Listening now",
@@ -179,14 +181,19 @@
       "artists": "Artists",
       "recommendedPlaylists": "Recommended playlists",
       "basedOnRecent": "Based on your recent listening",
-      "madeForYou": "Made for you"
+      "madeForYou": "Made for you",
+      "popularNow": "Popular right now",
+      "discover": "Discover something new",
+      "genres": "Genres"
     },
     "cards": {
       "song": "Song · {artists}",
       "playlist": "Playlist · {owner}",
       "album": "Album · {artist}",
       "artist": "Artist"
-    }
+    },
+    "subtitle": "Here’s what’s playing on Aura right now.",
+    "unavailable": "Recommendations are unavailable right now. Try again in a moment."
   },
   "time": {
     "justNow": "just now",

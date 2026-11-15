@@ -2,14 +2,12 @@ import { setRequestLocale } from "next-intl/server";
 import type { Locale } from "@/i18n/routing";
 import { AppShell } from "@/components/layout/AppShell";
 import { getSession, toUserSummary } from "@/lib/auth/session";
-import { userPlaylists } from "@/lib/mock/catalog";
-import { activityFeed, friendPresence } from "@/lib/mock/social";
 
 /**
  * The app area. Wraps every page in the app shell — for guests too: the session is optional and
  * the shell shows sign-in / sign-up instead of the account menu when there is none.
- * TEMPORARY: playlists / presence / activity come from mocks until the Library and Social
- * services exist.
+ * Playlists, friend presence, activity and notifications stay empty until library-svc and
+ * socials-svc exist — the shell shows empty states rather than invented data.
  */
 export default async function AppLayout({ children, params }: LayoutProps<"/[locale]">) {
   const { locale } = (await params) as { locale: Locale };
@@ -20,10 +18,10 @@ export default async function AppLayout({ children, params }: LayoutProps<"/[loc
   return (
     <AppShell
       user={session ? toUserSummary(session.user) : null}
-      playlists={userPlaylists}
-      presence={friendPresence}
-      activity={activityFeed}
-      unreadNotifications={session ? 5 : 0}
+      playlists={[]}
+      presence={[]}
+      activity={[]}
+      unreadNotifications={0}
     >
       {children}
     </AppShell>

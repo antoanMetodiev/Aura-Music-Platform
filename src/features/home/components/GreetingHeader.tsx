@@ -7,7 +7,6 @@ import { getGreetingKey } from "@/lib/utils/format";
 interface GreetingHeaderProps {
   /** `null` for a guest — greeting only. */
   name: string | null;
-  liveFriends: number;
 }
 
 const subscribe = () => () => {};
@@ -16,7 +15,7 @@ const getMinute = () => Math.floor(Date.now() / 60_000);
 const getServerMinute = () => null;
 
 /** Time-of-day greeting using the viewer's clock, with a neutral first paint. */
-export function GreetingHeader({ name, liveFriends }: GreetingHeaderProps) {
+export function GreetingHeader({ name }: GreetingHeaderProps) {
   const t = useTranslations("home");
   const format = useFormatter();
   const minute = useSyncExternalStore(subscribe, getMinute, getServerMinute);
@@ -31,16 +30,7 @@ export function GreetingHeader({ name, liveFriends }: GreetingHeaderProps) {
       <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
         {name ? `${greeting}, ${name}` : greeting}
       </h1>
-      <p className="text-sm text-muted-foreground">
-        {liveFriends > 0 ? (
-          <>
-            <span className="mr-1.5 inline-block size-1.5 animate-pulse rounded-full bg-success align-middle" />
-            {t("friendsListeningCount", { count: liveFriends })}
-          </>
-        ) : (
-          t("friendsQuiet")
-        )}
-      </p>
+      <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
     </div>
   );
 }

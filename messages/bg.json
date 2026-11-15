@@ -43,7 +43,8 @@
     "personal": "Лични",
     "mobile": "Мобилна навигация",
     "resize": "Промени ширината на менюто",
-    "resizeHint": "Влачи за ширина · двоен клик за връщане"
+    "resizeHint": "Влачи за ширина · двоен клик за връщане",
+    "noPlaylists": "Плейлистите ти ще се появят тук."
   },
   "languages": {
     "en": "English",
@@ -117,7 +118,8 @@
     "surface": "Изглед на „Сега слушаш“",
     "surfaceArtwork": "Обложка",
     "surfaceVideo": "Видео",
-    "videoBadge": "Видео"
+    "videoBadge": "Видео",
+    "noActivity": "Още няма активност."
   },
   "presence": {
     "listening": "Слуша сега",
@@ -179,14 +181,19 @@
       "artists": "Изпълнители",
       "recommendedPlaylists": "Препоръчани плейлисти",
       "basedOnRecent": "На база скорошното ти слушане",
-      "madeForYou": "Създадено за теб"
+      "madeForYou": "Създадено за теб",
+      "popularNow": "Популярно сега",
+      "discover": "Открий нещо ново",
+      "genres": "Жанрове"
     },
     "cards": {
       "song": "Песен · {artists}",
       "playlist": "Плейлист · {owner}",
       "album": "Албум · {artist}",
       "artist": "Изпълнител"
-    }
+    },
+    "subtitle": "Ето какво се слуша в Aura сега.",
+    "unavailable": "Препоръките не са достъпни в момента. Опитай отново след малко."
   },
   "time": {
     "justNow": "току-що",

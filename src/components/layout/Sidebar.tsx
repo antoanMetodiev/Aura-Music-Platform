@@ -35,8 +35,8 @@ const primaryNav: { key: NavKey; href: string; icon: React.ComponentType<{ class
 const secondaryNav: typeof primaryNav = [
   { key: "likedSongs", href: routes.liked, icon: Heart },
   { key: "recentlyPlayed", href: routes.recentlyPlayed, icon: Clock },
-  { key: "friends", href: routes.friends, icon: Users, badge: 2 },
-  { key: "notifications", href: routes.notifications, icon: Bell, badge: 5 },
+  { key: "friends", href: routes.friends, icon: Users },
+  { key: "notifications", href: routes.notifications, icon: Bell },
 ];
 
 interface SidebarProps {
@@ -122,6 +122,9 @@ export function Sidebar({ playlists }: SidebarProps) {
       </div>
 
       <ul className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        {playlists.length === 0 && (
+          <li className={cn("px-2 py-1 text-xs text-muted-foreground", label)}>{t("noPlaylists")}</li>
+        )}
         {playlists.map((playlist) => {
           const href = routes.playlist(playlist.id);
           const active = pathname === href;

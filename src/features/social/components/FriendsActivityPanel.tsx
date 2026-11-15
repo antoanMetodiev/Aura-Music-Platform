@@ -48,6 +48,11 @@ export function FriendsActivityPanel({ presence, activity }: FriendsActivityPane
           {feed.map((item) => (
             <ActivityRow key={item.id} item={item} />
           ))}
+          {feed.length === 0 && (
+            <li className="rounded-md border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+              {t("noActivity")}
+            </li>
+          )}
         </ul>
       </section>
     </div>
