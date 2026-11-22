@@ -1,6 +1,7 @@
 import "server-only";
 
 import { cache } from "react";
+import { unstable_rethrow } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/env";
 import { ensureProfile, type Profile } from "./profile";
@@ -33,6 +34,8 @@ export const getSession = cache(async (): Promise<{ user: AppUser } | null> => {
   try {
     return await loadSession();
   } catch (error) {
+    // cookies() throws on purpose while prerendering to mark the route dynamic — that one is Next's.
+    unstable_rethrow(error);
     // A broken session (database unreachable, missing secret, profile row that can't be created)
     // must not take down every page: render as a guest and leave the reason in the Worker logs.
     console.error("[auth] getSession failed — rendering as guest", error);
