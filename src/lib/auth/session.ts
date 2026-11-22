@@ -30,6 +30,17 @@ export interface AppUser {
  */
 export const getSession = cache(async (): Promise<{ user: AppUser } | null> => {
   if (!isSupabaseAuthConfigured()) return null;
+  try {
+    return await loadSession();
+  } catch (error) {
+    // A broken session (database unreachable, missing secret, profile row that can't be created)
+    // must not take down every page: render as a guest and leave the reason in the Worker logs.
+    console.error("[auth] getSession failed — rendering as guest", error);
+    return null;
+  }
+});
+
+async function loadSession(): Promise<{ user: AppUser } | null> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.getClaims();
   if (error || !data?.claims) return null;
@@ -45,7 +56,7 @@ export const getSession = cache(async (): Promise<{ user: AppUser } | null> => {
     picture: metadata.avatar_url ?? metadata.picture,
   });
   return { user: toAppUser(profile, { email: claims.email, provider: appMetadata.provider ?? "email" }) };
-});
+}
 
 /**
  * Access token for the Spring services (Supabase-signed JWT; the services verify it against
